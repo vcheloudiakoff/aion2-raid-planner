@@ -84,8 +84,10 @@ Une vitrine.
 - Q7 déploiement : le motif push-to-deploy par runner auto-hébergé existe déjà.
 - Q8 données de référence : fichiers de données éditables lus sans reconstruire l'image ; Vincent les
   met à jour après vérification dans le client.
-- Q11 stack : le moins de pièces à sécuriser et maintenir seul, dans une techno que Vincent pratique ;
-  SQLite dans un volume dédié proposé.
+- Q11 stack : Vincent choisit **Rust** côté serveur (Axum, SQLx) et **React** côté client (TypeScript, Vite,
+  Tailwind), les technos qu'il aime et pratique. La spine tranche le reste avec le critère « le moins de
+  pièces à sécuriser et maintenir seul » : SQLite dans un volume dédié (proposé) ou PostgreSQL, un seul
+  conteneur qui sert le build React depuis le binaire Rust ou deux conteneurs, limitation de débit.
 - Limitation de débit : Caddy de base n'en a pas (module à compiler ou limite applicative) ; IP visiteur
   de confiance uniquement depuis le saut du tunnel.
 
