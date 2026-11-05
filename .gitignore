@@ -1,0 +1,21 @@
+# BMAD : réponses d'install personnelles, régénérées par l'installeur, propres à chaque dev.
+# (_bmad/custom/*.user.toml et _bmad/render/ ont déjà leur propre .gitignore.)
+_bmad/config.user.toml
+
+# Secrets et environnement
+.env
+.env.*
+!.env.example
+
+# Dépendances et builds (à préciser quand la stack sera choisie)
+node_modules/
+dist/
+target/
+
+# OS, éditeurs, Claude Code local
+.DS_Store
+*.swp
+.idea/
+.vscode/
+.claude/settings.local.json
+.claude/worktrees/

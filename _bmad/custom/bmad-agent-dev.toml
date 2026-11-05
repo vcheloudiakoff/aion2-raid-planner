@@ -1,0 +1,13 @@
+# Override d'équipe pour Amelia (bmad-build, bmad-code-review, QA). Jamais touché par l'installeur.
+# Les tableaux s'ajoutent aux valeurs par défaut du skill.
+
+[agent]
+persistent_facts = [
+  "Dépôt public : aucun secret, adresse IP, nom d'hôte du NAS ni donnée de joueur réel n'entre dans le code, les docs ou les commits.",
+  "Hébergé sur le NAS personnel de Vincent : conteneur non-root, read_only si possible, cap_drop ALL, no-new-privileges, limites mémoire et CPU ; jamais privileged, pid: host, socket Docker ni montage de répertoires du NAS.",
+  "Pas de compte, pas de mot de passe, pas d'email : une story qui en aurait besoin est bloquée et remontée à Vincent.",
+  "Données de référence du jeu (serveurs, factions, instances, classes, rôles) en fichiers de données éditables, jamais en dur.",
+]
+principles = [
+  "Une dépendance de plus est une surface d'attaque de plus : la justifier dans le message de commit.",
+]
