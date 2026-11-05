@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forge · aion2-raid-planner</title>
+<style>
+  :root {
+    --bg: #f6f3ec; --fg: #1d1a16; --muted: #6b6257; --card: #ffffff; --line: #e3dccf;
+    --accent: #8b2e2e; --accent-soft: #f3e4e1; --ok: #2f6b3a; --warn: #8a5a12; --warn-soft: #f6ecd8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17150f; --fg: #ece6da; --muted: #a79d8e; --card: #221f18; --line: #3a3529;
+      --accent: #d35a5a; --accent-soft: #3a2222; --ok: #7fc48c; --warn: #e0b060; --warn-soft: #3a2f16;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17150f; --fg: #ece6da; --muted: #a79d8e; --card: #221f18; --line: #3a3529;
+    --accent: #d35a5a; --accent-soft: #3a2222; --ok: #7fc48c; --warn: #e0b060; --warn-soft: #3a2f16;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 Georgia, "Times New Roman", serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; margin-bottom: 32px; }
+  h1 { font-size: 1.9rem; margin: 0 0 6px; letter-spacing: .01em; }
+  h2 { font-size: 1.25rem; margin: 40px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .meta { color: var(--muted); font-size: .95rem; }
+  .lead { font-size: 1.08rem; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); padding: 16px 18px; border-radius: 6px; }
+  .seal { width: 150px; height: 150px; transform: rotate(-8deg); filter: drop-shadow(0 3px 6px rgba(0,0,0,.25)); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+  .card h3 { margin: 0 0 6px; font-size: 1rem; color: var(--accent); }
+  .card p { margin: 0; font-size: .95rem; }
+  ul { padding-left: 1.2em; } li { margin: 6px 0; }
+  .why { color: var(--muted); }
+  .weak li::marker { color: var(--warn); }
+  .voices { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .voice { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+  .voice .who { font-weight: bold; } .voice .role { color: var(--muted); font-size: .9rem; }
+  .voice q { display: block; margin-top: 6px; font-style: italic; font-size: .95rem; }
+  .tag { display: inline-block; font: 12px/1.4 system-ui, sans-serif; letter-spacing: .04em; text-transform: uppercase; padding: 1px 7px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+  .tag.inst { background: var(--accent-soft); color: var(--accent); }
+  .tag.gen { background: var(--warn-soft); color: var(--warn); }
+  footer { margin-top: 48px; color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line); padding-top: 12px; }
+  code { font: .92em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--accent-soft); padding: 0 4px; border-radius: 3px; }
+  @media (max-width: 560px) { header { grid-template-columns: 1fr; } .seal { width: 120px; height: 120px; justify-self: end; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <h1>aion2-raid-planner, passé à la forge</h1>
+    <div class="meta">Session du 5 novembre 2026 · mode attaque · Vincent, seul décideur · 68 entrées au journal</div>
+  </div>
+  <svg class="seal" viewBox="0 0 200 200" role="img" aria-label="Sceau : HARDENED">
+    <defs>
+      <radialGradient id="wax" cx="40%" cy="35%" r="70%">
+        <stop offset="0" stop-color="#c0433f"/><stop offset="1" stop-color="#7a1f1f"/>
+      </radialGradient>
+    </defs>
+    <path fill="url(#wax)" d="M100 8c14 0 22 10 34 12s26-6 36 4 4 24 10 36 18 18 16 32-16 20-20 32-2 26-12 34-24 2-36 8-20 18-34 18-22-10-34-12-26 6-36-4-4-24-10-36S-2 114 0 100s16-20 20-32 2-26 12-34 24-2 36-8S86 8 100 8z"/>
+    <circle cx="100" cy="100" r="68" fill="none" stroke="#f3d9c9" stroke-opacity=".7" stroke-width="2"/>
+    <circle cx="100" cy="100" r="60" fill="none" stroke="#f3d9c9" stroke-opacity=".5" stroke-width="1"/>
+    <text x="100" y="94" text-anchor="middle" font-family="Georgia, serif" font-weight="bold" font-size="24" fill="#fbe9df" letter-spacing="2">HARDENED</text>
+    <text x="100" y="118" text-anchor="middle" font-family="Georgia, serif" font-size="11" fill="#fbe9df" fill-opacity=".85" letter-spacing="1">FORGE · 2026-11-05</text>
+    <text x="100" y="140" text-anchor="middle" font-family="Georgia, serif" font-size="10" fill="#fbe9df" fill-opacity=".7">10 verrous · 11 rejets</text>
+  </svg>
+</header>
+
+<p class="lead">
+<strong>L'idée tient, et elle est plus petite et plus précise qu'en entrant.</strong>
+Ce n'est pas « trouver des joueurs » : le jeu le fait déjà, en direct, avec une liste de salles inter-serveur
+et inter-faction. C'est un <strong>système de booking</strong> pour une légion et son cercle : un événement à
+créneaux, des candidatures avec pseudo, serveur, classe, CP et disponibilités, une <strong>composition</strong>
+proposée par un solveur ou faite à la main, des titulaires et un banc, et un rendez-vous dans une salle du jeu
+dont l'outil donne le nom et les dix slots. Sans compte, sans contact stocké, sans fiabilité ni historique. Une vitrine.
+</p>
+
+<h2>Ce qui est verrouillé</h2>
+<div class="grid">
+  <div class="card"><h3>Q6 · Rendez-vous en jeu</h3><p>La liste des salles de Sanctuaire est régionale, tous serveurs, deux factions, avec recherche par nom. Preuve : captures du client global. L'outil génère un nom de salle unique et rend les dix slots. L'identifiant d'un joueur est <code>Pseudo[SRV]</code>.</p></div>
+  <div class="card"><h3>Candidature</h3><p>Pseudo, serveur (la faction s'en déduit), classe, CP déclaré, disponibilités et préférence par créneau. Pas de Gear Score, pas de Discord par joueur. Le CP se vérifie en jeu, pas dans l'outil.</p></div>
+  <div class="card"><h3>Vitrine</h3><p>Aucune fiabilité, réputation ni historique, jamais. Les absents s'absorbent par un banc et une re-confirmation par lien. La confiance se fait entre humains, sur le Discord du raid.</p></div>
+  <div class="card"><h3>Q2 · Identité</h3><p>Liens porteurs de droits : public, organisateur, participant. Mémorisés par le navigateur, copiables. Aucune récupération : lien perdu, on se réinscrit ou le raid expire.</p></div>
+  <div class="card"><h3>Q1 · Anti-abus</h3><p>Débit par IP, disjoncteur global, champs bornés, honeypot, expiration, tri par l'organisateur, lien d'administration. Pas de défi tiers. Pertes acceptées, fil de déclenchement écrit.</p></div>
+  <div class="card"><h3>Q9 · Q4 · Public</h3><p>La légion et son cercle d'abord. Le public du site est un pari, pas une promesse. Raid listé par défaut avec validation ; option lien seul.</p></div>
+  <div class="card"><h3>Q3 · Contact</h3><p>Quatre gestes sans canal : pseudo à copier, Discord du raid, message prêt à coller, et l'inscrit rouvre son lien. Aucune notification en v1.</p></div>
+  <div class="card"><h3>Q5 · Hébergement</h3><p>L'edge déjà en production : VPS, tunnel sortant, garde anti-fuite, conteneurs sur localhost. Nom gratuit pour le pilote dans une zone propre, vrai domaine si concluant.</p></div>
+  <div class="card"><h3>Modèle</h3><p>Un événement à N créneaux produit K groupes : créneau, dix titulaires, banc, salle. Deux liens : direct accepté d'office, public à valider. Bornes min/max par classe.</p></div>
+  <div class="card"><h3>Composition</h3><p>Solveur déterministe, sans IA. Automatique selon les critères ou manuelle. Le plus de groupes complets, puis équilibre des CP, préférence en départage. Proposée, jamais imposée. Construite en dernier.</p></div>
+  <div class="card"><h3>Q10 · Langue</h3><p>Textes externalisés dès la v1, livrés en français et en anglais.</p></div>
+</div>
+
+<h2>Rejeté, et pourquoi</h2>
+<ul>
+  <li>Pseudo Discord par inscrit <span class="why">— une liste de cibles scrapable, contraire aux données minimales.</span></li>
+  <li>Réputation, note, historique, liste noire <span class="why">— exigent une identité persistante, donc un compte, et font de Vincent un arbitre.</span></li>
+  <li>Récupération de lien par email ou code <span class="why">— chaque porte de sortie devient un compte.</span></li>
+  <li>Défi humain tiers <span class="why">— script tiers, interdit par la CSP stricte.</span></li>
+  <li>Bouton signaler <span class="why">— spammable sans compte, et encore un arbitre.</span></li>
+  <li>Modèle de langage pour composer <span class="why">— coût récurrent, tiers, données de joueurs sorties, résultat non reproductible.</span></li>
+  <li>Entité « campagne » séparée <span class="why">— un événement à N créneaux et K groupes suffit.</span></li>
+  <li>Matchmaking d'inconnus <span class="why">— reste un non-objectif ; composer un vivier connu n'est pas la même chose.</span></li>
+  <li>Liste de joueurs seuls avec contact <span class="why">— hors v1, contraire aux données minimales.</span></li>
+  <li>Notifications <span class="why">— aucun canal sans email ni push.</span></li>
+  <li>Sous-domaine de la zone du NAS <span class="why">— révèle l'adresse du domicile en une requête DNS.</span></li>
+</ul>
+
+<h2>Ce qui survit à l'attaque</h2>
+<ul class="weak">
+  <li>La liste publique est vide au départ. « Trouver les derniers joueurs » est un pari.</li>
+  <li>Le CP est déclaré, donc invérifiable. Le tri réel se fait en jeu.</li>
+  <li>Les secrets dans l'URL gardent des risques résiduels : mauvais collage, PC partagé, stockage effacé.</li>
+  <li>Un site public à contenu visiteur hébergé chez un particulier a des obligations légales que personne n'a vérifiées, et qui peuvent heurter les 24 h de rétention.</li>
+  <li>L'écran de composition sur mobile est le plus gros risque de glissement pour une personne seule.</li>
+  <li>Deux candidatures avec le même pseudo et serveur : l'outil signale, l'organisateur tranche.</li>
+</ul>
+
+<h2>Renvoyé à la spine d'architecture</h2>
+<ul>
+  <li>Q7 déploiement, Q8 données de référence, Q11 stack, avec leur critère déjà fixé dans <code>forged-idea.md</code>.</li>
+  <li>Limitation de débit à l'edge : Caddy de base n'en a pas ; module à compiler ou limite applicative.</li>
+</ul>
+
+<h2>Les voix qui ont attaqué</h2>
+<div class="voices">
+  <div class="voice"><div class="who">📏 Level <span class="tag inst">installée</span></div><div class="role">Claim Checker</div><q>« Vincent dit oui » n'est pas une preuve. Ce qui changerait la réponse : une capture de salle avec deux serveurs et deux factions dedans.</q></div>
+  <div class="voice"><div class="who">📋 John <span class="tag inst">installé</span></div><div class="role">Product Manager</div><q>Quel travail votre outil fait-il que cette popup ne fait pas ?</q></div>
+  <div class="voice"><div class="who">🔒 Vex <span class="tag inst">installé</span></div><div class="role">Security Engineer</div><q>Un pseudo Discord par inscrit sur une page publique, c'est une liste de cibles. Je la scrape en une requête.</q></div>
+  <div class="voice"><div class="who">🚢 Dana <span class="tag inst">installée</span></div><div class="role">La Pragmatique</div><q>La réputation ne supprime pas le no-show, elle le rend coûteux à gérer. Un banc et une re-confirmation, c'est bête et ça marche.</q></div>
+  <div class="voice"><div class="who">🌶️ Boundary <span class="tag inst">installée</span></div><div class="role">Chasseuse de cas limites</div><q>L'organisateur colle le mauvais lien. Discord le déplie. Le petit frère ouvre l'historique.</q></div>
+  <div class="voice"><div class="who">🎨 Sally <span class="tag inst">installée</span></div><div class="role">UX Designer</div><q>Il ne peut pas « envoyer ». Il peut copier. Ce qu'il copie décide de tout.</q></div>
+  <div class="voice"><div class="who">📊 Mary <span class="tag inst">installée</span></div><div class="role">Business Analyst</div><q>Sans deux nombres, « communauté FR » est un espoir, pas un marché.</q></div>
+  <div class="voice"><div class="who">🏗️ Winston <span class="tag inst">installé</span></div><div class="role">System Architect</div><q>Le VPS ne cache votre adresse que si rien d'autre ne la révèle.</q></div>
+  <div class="voice"><div class="who">🎯 Yui <span class="tag inst">installée</span></div><div class="role">La Craftsman</div><q>Ne concevez rien. Vous l'avez déjà fait deux fois, prod et staging.</q></div>
+  <div class="voice"><div class="who">🪵 Splinter <span class="tag inst">installé</span></div><div class="role">Consensus Challenger</div><q>Trop facile. Si la composition est la douleur réelle, le palier 1 est un formulaire de plus.</q></div>
+  <div class="voice"><div class="who">💻 Amelia <span class="tag inst">installée</span></div><div class="role">Senior Software Engineer</div><q>Je construis la composition en dernier. Si elle glisse, vous avez quand même un outil.</q></div>
+  <div class="voice"><div class="who">Kaelis <span class="tag gen">générée</span></div><div class="role">Chef de raid asmodien</div><q>Ma salle s'appelle « Leaving now ». Votre troisième groupe n'existe pas parce que personne n'a dix personnes au même instant.</q></div>
+  <div class="voice"><div class="who">Nessa <span class="tag gen">générée</span></div><div class="role">Clerc élyséenne sans légion</div><q>Je ne donnerai pas mon Discord à un site. Je veux savoir si je suis prise.</q></div>
+  <div class="voice"><div class="who">Ilyana <span class="tag gen">générée</span></div><div class="role">Modératrice d'un Discord LFG</div><q>Le jour où votre outil affiche « fiable », vous devenez juge.</q></div>
+  <div class="voice"><div class="who">Sam <span class="tag gen">générée</span></div><div class="role">Mainteneur d'un outil de sondage sans compte</div><q>Décidez maintenant que vous ne serez pas gentil.</q></div>
+  <div class="voice"><div class="who">Rémi <span class="tag gen">générée</span></div><div class="role">16 ans, un script de vingt lignes</div><q>Deux cents raids avec des insultes dans le titre, en une heure, jusqu'à ce que vous vous leviez.</q></div>
+  <div class="voice"><div class="who">Lucie <span class="tag gen">générée</span></div><div class="role">Officière de légion</div><q>La liste publique, le soir du lancement, elle est vide.</q></div>
+  <div class="voice"><div class="who">Karim <span class="tag gen">générée</span></div><div class="role">Inscrit qui attend une réponse</div><q>Personne ne me préviendra. Alors je rouvre mon lien jeudi matin.</q></div>
+  <div class="voice"><div class="who">Oskar <span class="tag gen">générée</span></div><div class="role">Le booter à dix euros</div><q>Si c'est l'adresse du VPS, je gâche la soirée du site. Si c'est votre box, je gâche la vôtre.</q></div>
+  <div class="voice"><div class="who">Mathis <span class="tag gen">générée</span></div><div class="role">Celui qui a tout consolidé dans une IA</div><q>La composition m'a pris deux minutes. Relire vingt-quatre messages, une heure.</q></div>
+  <div class="voice"><div class="who">Ines <span class="tag gen">générée</span></div><div class="role">Clerc du groupe faible</div><q>Si votre machine équilibre, je reviens.</q></div>
+</div>
+
+<footer>
+  Journal complet : <code>_bmad-output/forge/aion2-raid-sans-compte/.memlog.md</code> · Distillat pour la suite :
+  <code>forged-idea.md</code> · Aucune party invoquée. Ce rapport ne contient ni adresse, ni nom d'hôte, ni donnée de joueur réel.
+</footer>
+</main>
+</body>
+</html>

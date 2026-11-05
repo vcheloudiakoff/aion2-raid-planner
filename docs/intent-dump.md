@@ -195,3 +195,21 @@ Pistes `[PROPOSITION]`, à tester par `forge-idea` puis à trancher dans la spin
 - Dépôts locaux de référence (non publics, à lire sur la machine de Vincent) : le dépôt du NAS pour Caddy,
   Compose et le runner ; le dépôt du projet qui utilise le VPS en bord de réseau pour ce motif.
 - Pack de méthode : `~/bmad-method/` (cheatsheet, tutoriel, kickoff, automatisation).
+
+## 12. Addendum post-forge (05/11/2026)
+
+Le forge (`/bmad-forge-idea`, mode attaque) a rendu le verdict **HARDENED**. Le distillat fait foi :
+`_bmad-output/forge/aion2-raid-sans-compte/forged-idea.md` (journal : `.memlog.md`, rapport :
+`forge-report.html`). Il remplace ce qui précède sur les points suivants :
+
+- **§2** : public v1 = la légion de Vincent et son cercle (≈15 actifs par jour, ≤120 membres) ; le public
+  du site est un pari, pas une promesse.
+- **§3** : CAP-2 ajoute le **CP déclaré** et une préférence de créneau ; CAP-3 devient un événement à N
+  créneaux qui produit K groupes (titulaires + banc), avec **composition** par solveur ou manuelle et
+  **re-confirmation** par lien ; CAP-1 produit aussi un nom de salle unique et les 10 slots à régler en jeu.
+- **§4** : les données minimales incluent le CP (donnée de jeu, pas personnelle) ; Discord uniquement au
+  niveau du raid, posé par l'organisateur ; interface livrée en français **et** en anglais.
+- **§5** : « pas de matchmaking automatique » se lit « pas d'assemblage d'inconnus au hasard » ; la
+  composition d'un vivier connu est dans la v1. Aucune fiabilité, réputation ni historique, jamais.
+- **§8 et §10** : Q1, Q2, Q3, Q4, Q5, Q6, Q9, Q10 sont tranchées dans le distillat ; Q7, Q8, Q11 vont
+  à la spine d'architecture avec leur critère.
