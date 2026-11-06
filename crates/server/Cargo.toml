@@ -11,6 +11,10 @@ axum.workspace = true
 tokio.workspace = true
 sqlx = { workspace = true, features = ["runtime-tokio", "sqlite", "chrono", "migrate", "macros"] }
 rust-embed.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+sha2.workspace = true
 chrono.workspace = true
 rand.workspace = true
 data-encoding.workspace = true

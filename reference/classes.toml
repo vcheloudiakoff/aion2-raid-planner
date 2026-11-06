@@ -1,0 +1,68 @@
+# Classes jouables, communes aux deux factions. Noms français à vérifier dans le client.
+#
+# Une entrée par bloc [[class]] :
+#   id          slug anglais [a-z0-9_-], 32 caractères au plus ; jamais renommé, unique dans le fichier
+#   role        id d'un rôle de `roles.toml`
+#   default_min nombre minimal par défaut dans un événement, entier ≥ 0
+#   default_max nombre maximal par défaut, entier ≥ default_min
+#   label       { en = "…", fr = "…" } : `en` obligatoire, `fr` facultatif (repli sur `en`)
+#   enabled     facultatif, `true` par défaut ; retrait par `enabled = false`, jamais par suppression
+#
+# Vérifier avant de pousser : `cargo run -q -p server -- validate-reference reference`.
+# Tout champ inconnu est refusé.
+
+[[class]]
+id = "gladiator"
+role = "dps"
+default_min = 0
+default_max = 10
+label = { en = "Gladiator", fr = "Gladiateur" }
+
+[[class]]
+id = "templar"
+role = "tank"
+default_min = 0
+default_max = 10
+label = { en = "Templar", fr = "Templier" }
+
+[[class]]
+id = "assassin"
+role = "dps"
+default_min = 0
+default_max = 10
+label = { en = "Assassin", fr = "Assassin" }
+
+[[class]]
+id = "ranger"
+role = "dps"
+default_min = 0
+default_max = 10
+label = { en = "Ranger", fr = "Rôdeur" }
+
+[[class]]
+id = "sorcerer"
+role = "dps"
+default_min = 0
+default_max = 10
+label = { en = "Sorcerer", fr = "Sorcier" }
+
+[[class]]
+id = "spiritmaster"
+role = "dps"
+default_min = 0
+default_max = 10
+label = { en = "Spiritmaster", fr = "Spiritualiste" }
+
+[[class]]
+id = "cleric"
+role = "healer"
+default_min = 0
+default_max = 10
+label = { en = "Cleric", fr = "Clerc" }
+
+[[class]]
+id = "chanter"
+role = "support"
+default_min = 0
+default_max = 10
+label = { en = "Chanter", fr = "Aède" }

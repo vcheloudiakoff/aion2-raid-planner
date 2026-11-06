@@ -9,3 +9,6 @@
 - source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-1-squelette-du-binaire-base-sqlite-et-sante.md`
   summary: Rendre `embedded_web_dist` strict en CI (variable du type `REQUIRE_WEB_DIST=1` après `npm run build`).
   evidence: sans build web le test se replie sur le contrat 404 ; un `outDir` cassé passerait en vert.
+- source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-2-reference-du-jeu-en-toml-rechargee-a-chaud.md`
+  summary: Tester le câblage de `run()` (même `ReferenceStore` pour `AppState` et la tâche, poll initial, tâche lancée), par extraction d'un `run_with(dir, db, listener)` ou par un smoke test du conteneur.
+  evidence: aucun test n'exécute `serve` ; passer un `ReferenceStore::new()` neuf à `AppState` laisserait la production en 503 sans casser la suite.

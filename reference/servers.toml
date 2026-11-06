@@ -1,0 +1,149 @@
+# Serveurs d'Aion 2, et libellés des deux factions.
+#
+# En tête, [factions.elyos] et [factions.asmodian] : le libellé de chaque faction, sous la forme
+# label = { en = "…", fr = "…" }. Ces deux clés sont fixes ; aucune autre faction n'est acceptée.
+#
+# Puis une entrée par bloc [[server]] :
+#   id      slug anglais [a-z0-9_-], 32 caractères au plus ; jamais renommé, unique dans le fichier
+#   region  id d'une région de `regions.toml`
+#   faction "elyos" ou "asmodian" (un serveur n'accueille qu'une faction)
+#   tag     le [SRV] exactement tel que le client l'affiche après le pseudo, sans les crochets :
+#           non vide, 16 caractères au plus, unique dans sa région
+#   label   { en = "…", fr = "…" } : `en` obligatoire, `fr` facultatif (repli sur `en`)
+#   enabled facultatif, `true` par défaut ; retrait par `enabled = false`, jamais par suppression
+#
+# Contenu initial : les 9 paires d'accès anticipé d'Europe ; `tag` = nom du serveur en attendant le
+# relevé dans le client. Vérifier avant de pousser :
+# `cargo run -q -p server -- validate-reference reference`. Tout champ inconnu est refusé.
+
+[factions.elyos]
+label = { en = "Elyos", fr = "Élyséens" }
+
+[factions.asmodian]
+label = { en = "Asmodians", fr = "Asmodiens" }
+
+[[server]]
+id = "siel"
+region = "europe"
+faction = "elyos"
+tag = "Siel"
+label = { en = "Siel" }
+
+[[server]]
+id = "israphel"
+region = "europe"
+faction = "asmodian"
+tag = "Israphel"
+label = { en = "Israphel" }
+
+[[server]]
+id = "nezekan"
+region = "europe"
+faction = "elyos"
+tag = "Nezekan"
+label = { en = "Nezekan" }
+
+[[server]]
+id = "zikel"
+region = "europe"
+faction = "asmodian"
+tag = "Zikel"
+label = { en = "Zikel" }
+
+[[server]]
+id = "vaizel"
+region = "europe"
+faction = "elyos"
+tag = "Vaizel"
+label = { en = "Vaizel" }
+
+[[server]]
+id = "triniel"
+region = "europe"
+faction = "asmodian"
+tag = "Triniel"
+label = { en = "Triniel" }
+
+[[server]]
+id = "kaisinel"
+region = "europe"
+faction = "elyos"
+tag = "Kaisinel"
+label = { en = "Kaisinel" }
+
+[[server]]
+id = "lumiel"
+region = "europe"
+faction = "asmodian"
+tag = "Lumiel"
+label = { en = "Lumiel" }
+
+[[server]]
+id = "yustiel"
+region = "europe"
+faction = "elyos"
+tag = "Yustiel"
+label = { en = "Yustiel" }
+
+[[server]]
+id = "marchutan"
+region = "europe"
+faction = "asmodian"
+tag = "Marchutan"
+label = { en = "Marchutan" }
+
+[[server]]
+id = "ariel"
+region = "europe"
+faction = "elyos"
+tag = "Ariel"
+label = { en = "Ariel" }
+
+[[server]]
+id = "azphel"
+region = "europe"
+faction = "asmodian"
+tag = "Azphel"
+label = { en = "Azphel" }
+
+[[server]]
+id = "fregion"
+region = "europe"
+faction = "elyos"
+tag = "Fregion"
+label = { en = "Fregion" }
+
+[[server]]
+id = "ereshkigal"
+region = "europe"
+faction = "asmodian"
+tag = "Ereshkigal"
+label = { en = "Ereshkigal" }
+
+[[server]]
+id = "meslamtaeda"
+region = "europe"
+faction = "elyos"
+tag = "Meslamtaeda"
+label = { en = "Meslamtaeda" }
+
+[[server]]
+id = "beritra"
+region = "europe"
+faction = "asmodian"
+tag = "Beritra"
+label = { en = "Beritra" }
+
+[[server]]
+id = "hithanya"
+region = "europe"
+faction = "elyos"
+tag = "Hithanya"
+label = { en = "Hithanya" }
+
+[[server]]
+id = "nemon"
+region = "europe"
+faction = "asmodian"
+tag = "Nemon"
+label = { en = "Nemon" }

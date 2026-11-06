@@ -1,0 +1,33 @@
+# Instances planifiables : sanctuaires (raids) et expéditions.
+#
+# En tête du fichier, la règle des libellés de salle (`room_label`), qui entrent dans le nom de salle
+# tapé en jeu :
+#   room_label_charset  les caractères autorisés, écrits à la suite dans une chaîne
+#   room_label_max      longueur maximale d'un `room_label`, en caractères, entier ≥ 1
+#
+# Puis une entrée par bloc [[instance]] :
+#   id            slug anglais [a-z0-9_-], 32 caractères au plus ; jamais renommé, unique
+#   kind          "sanctuary" ou "expedition"
+#   parties       nombre de groupes, entier ≥ 1
+#   party_size    joueurs par groupe, entier ≥ 1
+#   duration_min  durée par défaut en minutes, entier > 0
+#   cross_faction true si Élyséens et Asmodiens peuvent y entrer ensemble
+#   room_label    libellé court neutre (même texte en fr et en en), dans le charset ci-dessus
+#   label         { en = "…", fr = "…" } : `en` obligatoire, `fr` facultatif (repli sur `en`)
+#   enabled       facultatif, `true` par défaut ; retrait par `enabled = false`, jamais par suppression
+#
+# Vérifier avant de pousser : `cargo run -q -p server -- validate-reference reference`.
+# Tout champ inconnu est refusé.
+
+room_label_charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+room_label_max = 8
+
+[[instance]]
+id = "ludra"
+kind = "sanctuary"
+parties = 2
+party_size = 5
+duration_min = 60
+cross_faction = true
+room_label = "LUDRA"
+label = { en = "Sanctuary Raid: Ludra", fr = "Raid de Sanctuaire : Ludra" }

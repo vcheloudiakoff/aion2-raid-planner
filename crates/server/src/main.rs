@@ -1,4 +1,4 @@
-//! Point d'entrée : sous-commandes `serve` (défaut) et `healthcheck`.
+//! Point d'entrée : sous-commandes `serve` (défaut), `healthcheck` et `validate-reference`.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
@@ -6,17 +6,23 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use server::app::AppState;
+use server::app::tasks;
 use server::config::{Config, LISTEN_PORT};
 use server::infra::clock::SystemClock;
 use server::infra::ids::SystemIdGenerator;
+use server::infra::reference::{self, Loader, ReferenceStore};
 use server::infra::sqlite::{self, Db};
 use server::{healthcheck, http};
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
-    match (args.next().as_deref(), args.next()) {
-        (None | Some("serve"), None) => serve(),
-        (Some("healthcheck"), None) => {
+    match (args.next().as_deref(), args.next(), args.next()) {
+        (None | Some("serve"), None, None) => serve(),
+        // Avant `Config` : la CI valide `reference/` sans variable d'environnement.
+        (Some("validate-reference"), dir, None) => validate_reference(Path::new(
+            dir.as_deref().unwrap_or(reference::REFERENCE_DIR),
+        )),
+        (Some("healthcheck"), None, None) => {
             match healthcheck::check(healthcheck::ADDR, healthcheck::TIMEOUT) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
@@ -26,8 +32,31 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            eprintln!("usage: server [serve | healthcheck]");
+            eprintln!("usage: server [serve | healthcheck | validate-reference [DIR]]");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// Même validation qu'au démarrage et au rechargement, sans repli sur le jeu embarqué.
+fn validate_reference(dir: &Path) -> ExitCode {
+    match reference::load_dir(dir) {
+        Ok(set) => {
+            println!(
+                "reference OK: {} regions, {} servers, {} instances, {} classes, {} roles",
+                set.regions.len(),
+                set.servers.len(),
+                set.instances.len(),
+                set.classes.len(),
+                set.roles.len()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            for problem in e.problems() {
+                eprintln!("{problem}");
+            }
+            ExitCode::FAILURE
         }
     }
 }
@@ -65,10 +94,23 @@ fn serve() -> ExitCode {
 async fn run(_config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let db = Db::open(sqlite::file_options(Path::new(sqlite::DB_PATH))).await?;
     db.migrate().await?;
+
+    // Sans jeu valide, le serveur démarre quand même : santé et référence en 503, nouvel essai à
+    // chaque tick.
+    let store = ReferenceStore::new();
+    let mut loader = Loader::new(reference::REFERENCE_DIR, store.clone());
+    let loader = tokio::task::spawn_blocking(move || {
+        loader.poll();
+        loader
+    })
+    .await?;
+    let _reload = tasks::reload::spawn(loader, tasks::reload::TICK);
+
     let state = AppState::new(
         db.clone(),
         Arc::new(SystemClock),
         Arc::new(SystemIdGenerator),
+        store,
     );
 
     let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, LISTEN_PORT));

@@ -1,0 +1,25 @@
+# Rôles de groupe. Le libellé est le libellé court affiché dans les grilles et les comptes.
+#
+# Une entrée par bloc [[role]] :
+#   id      slug anglais [a-z0-9_-], 32 caractères au plus ; jamais renommé, unique dans le fichier
+#   label   { en = "…", fr = "…" } : `en` obligatoire, `fr` facultatif (repli sur `en`)
+#   enabled facultatif, `true` par défaut ; retrait par `enabled = false`, jamais par suppression
+#
+# `classes.toml` désigne un rôle par son id. Vérifier avant de pousser :
+# `cargo run -q -p server -- validate-reference reference`. Tout champ inconnu est refusé.
+
+[[role]]
+id = "tank"
+label = { en = "Tank", fr = "Tank" }
+
+[[role]]
+id = "healer"
+label = { en = "Healer", fr = "Soin" }
+
+[[role]]
+id = "dps"
+label = { en = "DPS", fr = "DPS" }
+
+[[role]]
+id = "support"
+label = { en = "Support", fr = "Soutien" }

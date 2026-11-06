@@ -10,6 +10,7 @@ use rust_embed::RustEmbed;
 use server::app::AppState;
 use server::infra::clock::FixedClock;
 use server::infra::ids::DeterministicIdGenerator;
+use server::infra::reference::{self, ReferenceStore};
 use server::infra::sqlite::{self, Db};
 use tower::ServiceExt;
 
@@ -20,12 +21,21 @@ pub struct FixtureDist;
 
 pub const FIXTURE_INDEX: &str = include_str!("../fixtures/dist/index.html");
 
+/// État de test, référence embarquée chargée.
 pub fn state(db: Db) -> AppState {
+    state_with(
+        db,
+        ReferenceStore::with(reference::embedded().expect("embedded reference is valid")),
+    )
+}
+
+pub fn state_with(db: Db, reference: ReferenceStore) -> AppState {
     let clock = FixedClock::new("2026-11-06T10:00:00Z".parse().unwrap());
     AppState::new(
         db,
         Arc::new(clock),
         Arc::new(DeterministicIdGenerator::new()),
+        reference,
     )
 }
 
@@ -45,11 +55,21 @@ pub fn fixture_router(state: AppState) -> Router {
 }
 
 pub async fn send(router: &Router, method: Method, uri: &str) -> (Response<Body>, String) {
-    let req = Request::builder()
-        .method(method)
-        .uri(uri)
-        .body(Body::empty())
-        .unwrap();
+    send_with(router, method, uri, &[]).await
+}
+
+/// Comme `send`, avec des en-têtes de requête.
+pub async fn send_with(
+    router: &Router,
+    method: Method,
+    uri: &str,
+    headers: &[(&str, &str)],
+) -> (Response<Body>, String) {
+    let mut req = Request::builder().method(method).uri(uri);
+    for (name, value) in headers {
+        req = req.header(*name, *value);
+    }
+    let req = req.body(Body::empty()).unwrap();
     let res = router.clone().oneshot(req).await.unwrap();
     let (parts, body) = res.into_parts();
     let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();

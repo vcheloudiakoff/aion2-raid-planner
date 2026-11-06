@@ -10,11 +10,15 @@ pub enum Health {
     Unavailable,
 }
 
-/// Base ouverte et toutes les migrations embarquées appliquées. La cause d'un échec part dans
-/// `tracing` au niveau `warn`, jamais dans la réponse.
+/// Base ouverte, toutes les migrations embarquées appliquées et référence chargée. La cause d'un
+/// échec part dans `tracing` au niveau `warn`, jamais dans la réponse.
 pub async fn health(state: &AppState) -> Health {
     if state.db.is_closed() {
         tracing::warn!("health: database pool closed");
+        return Health::Unavailable;
+    }
+    if state.reference.get().is_none() {
+        tracing::warn!("health: reference not loaded");
         return Health::Unavailable;
     }
     match migrations_up_to_date(&state.db.read, state.migrator).await {

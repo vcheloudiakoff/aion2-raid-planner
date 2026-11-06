@@ -1,0 +1,35 @@
+# Régions de serveurs d'Aion 2.
+#
+# Une entrée par bloc [[region]] :
+#   id      slug anglais [a-z0-9_-], 32 caractères au plus ; jamais renommé, unique dans le fichier
+#   label   { en = "…", fr = "…" } : `en` obligatoire, `fr` facultatif (repli sur `en`)
+#   enabled facultatif, `true` par défaut ; on retire une entrée avec `enabled = false`, jamais en
+#           la supprimant
+#
+# Les cinq fichiers de ce dossier forment un seul jeu : un fichier invalide ou manquant laisse l'ancien
+# jeu en service. Vérifier avant de pousser : `cargo run -q -p server -- validate-reference reference`.
+# Tout champ inconnu est refusé (une faute de frappe sur `enabled` ne passe pas inaperçue).
+
+[[region]]
+id = "europe"
+label = { en = "Europe", fr = "Europe" }
+
+[[region]]
+id = "na_west"
+label = { en = "North America West", fr = "Amérique du Nord Ouest" }
+enabled = false
+
+[[region]]
+id = "na_east"
+label = { en = "North America East", fr = "Amérique du Nord Est" }
+enabled = false
+
+[[region]]
+id = "latin_america"
+label = { en = "Latin America", fr = "Amérique latine" }
+enabled = false
+
+[[region]]
+id = "asia"
+label = { en = "Asia", fr = "Asie" }
+enabled = false

@@ -1,7 +1,9 @@
 //! Routes Axum, assets embarqués et en-têtes. Même origine pour l'API et la SPA : pas de CORS.
 
 pub mod assets;
+pub mod dto;
 pub mod headers;
+pub mod reference;
 
 use std::future::Future;
 
@@ -23,6 +25,7 @@ pub fn router(state: AppState) -> Router {
 pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Router {
     let api = Router::new()
         .route("/health", get(get_health))
+        .route("/reference", get(reference::get_reference))
         .fallback(api_not_found);
     Router::new()
         .nest("/api", api)
