@@ -2,5 +2,6 @@
 
 pub mod reference;
 mod timestamp;
+pub mod validate;
 
 pub use timestamp::{Timestamp, TimestampError};

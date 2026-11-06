@@ -19,6 +19,9 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 toml = { version = "=1.2.0", default-features = false, features = ["std", "serde", "parse"] }
 sha2 = "=0.11.1"
+hmac = "=0.13.0"
+# Sans la feature `jitter` (AD-7) : l'attente annoncée vient de `http::limits`, sans aléa.
+governor = { version = "=0.10.4", default-features = false, features = ["std"] }
 chrono = { version = "=0.4.45", default-features = false, features = ["std", "clock"] }
 rand = "=0.10.3"
 data-encoding = "=2.11.1"

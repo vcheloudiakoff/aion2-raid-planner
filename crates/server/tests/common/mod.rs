@@ -8,6 +8,7 @@ use axum::body::Body;
 use axum::http::{Method, Request, Response};
 use rust_embed::RustEmbed;
 use server::app::AppState;
+use server::config::Config;
 use server::infra::clock::FixedClock;
 use server::infra::ids::DeterministicIdGenerator;
 use server::infra::reference::{self, ReferenceStore};
@@ -30,14 +31,41 @@ pub fn state(db: Db) -> AppState {
 }
 
 pub fn state_with(db: Db, reference: ReferenceStore) -> AppState {
+    state_with_config(db, reference, &test_config(&[]))
+}
+
+/// Comme `state_with`, avec une configuration donnée.
+pub fn state_with_config(db: Db, reference: ReferenceStore, config: &Config) -> AppState {
     let clock = FixedClock::new("2026-11-06T10:00:00Z".parse().unwrap());
     AppState::new(
         db,
         Arc::new(clock),
         Arc::new(DeterministicIdGenerator::new()),
         reference,
+        config,
     )
 }
+
+/// Configuration de test : production par défaut (`TRUST_CLIENT_IP_HEADER=true`), `overrides`
+/// par-dessus.
+pub fn test_config(overrides: &[(&str, &str)]) -> Config {
+    Config::from_source(|k| {
+        overrides
+            .iter()
+            .rev()
+            .find(|(name, _)| *name == k)
+            .map(|(_, v)| (*v).to_owned())
+            .or_else(|| match k {
+                "PUBLIC_BASE_URL" => Some("https://raid.example.org".to_owned()),
+                "FORM_TOKEN_SECRET" => Some("0123456789abcdef0123456789abcdef".to_owned()),
+                _ => None,
+            })
+    })
+    .expect("valid test configuration")
+}
+
+/// IP visiteur posée par défaut sur les requêtes de test (plage de documentation 192.0.2.0/24).
+pub const TEST_CLIENT_IP: &str = "192.0.2.1";
 
 /// Base mémoire partagée propre au test, migrations appliquées.
 pub async fn memory_db(name: &str) -> Db {
@@ -58,8 +86,26 @@ pub async fn send(router: &Router, method: Method, uri: &str) -> (Response<Body>
     send_with(router, method, uri, &[]).await
 }
 
-/// Comme `send`, avec des en-têtes de requête.
+/// Comme `send`, avec des en-têtes de requête. `X-Client-IP` vaut [`TEST_CLIENT_IP`] sauf si
+/// `headers` le fournit.
 pub async fn send_with(
+    router: &Router,
+    method: Method,
+    uri: &str,
+    headers: &[(&str, &str)],
+) -> (Response<Body>, String) {
+    let mut all = headers.to_vec();
+    if !headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("x-client-ip"))
+    {
+        all.push(("x-client-ip", TEST_CLIENT_IP));
+    }
+    send_bare(router, method, uri, &all).await
+}
+
+/// Envoie exactement `headers`, sans IP visiteur par défaut.
+pub async fn send_bare(
     router: &Router,
     method: Method,
     uri: &str,

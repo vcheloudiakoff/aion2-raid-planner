@@ -283,3 +283,59 @@ garde-fou refuserait la suppression). Le retour arrière est une nouvelle migrat
 en dernier recours une restauration de la sauvegarde `pre-deploy` faite juste avant (§11) suivie d'un
 correctif sur `main`. Cette sauvegarde est supprimée deux jours après sa création : ce recours n'existe
 que pendant ce délai (au-delà, il ne reste que les deux quotidiennes).
+
+## 14. Vérification de fin d'epic 1
+
+Le signal de succès de l'epic 1 (`_bmad-output/specs/spec-epic-1-socle/SPEC.md`), pas à pas, après le
+dernier push de l'epic.
+
+1. **Accueil sur téléphone.** Ouvrir `https://raid.example.org/` sur un téléphone : l'accueil vide
+   s'affiche. Ouvrir *Langue · Thème*, passer en English puis revenir en Français : les deux langues
+   s'affichent.
+2. **Santé.** Depuis un poste quelconque :
+
+   ```sh
+   curl -sS -o /dev/null -w '%{http_code}\n' https://raid.example.org/api/health   # 200
+   ```
+
+3. **Référence sans rebuild.** Dans `reference/classes.toml`, changer le libellé `fr` (ou `en`) d'une
+   classe, commit, push sur `main`. Le job `deploy` ne reconstruit pas l'image (seul `reference/` a
+   changé). Moins d'une minute après la fin du job :
+
+   ```sh
+   curl -sS https://raid.example.org/api/reference | grep -o 'NOUVEAU LIBELLÉ'
+   ```
+
+   Remettre ensuite le libellé d'origine par un second push.
+4. **IP visiteur (AD-7).** Via le VPS, la route à clé répond, parce que le Caddy du VPS pose
+   `X-Client-IP` :
+
+   ```sh
+   curl -sS -o /dev/null -w '%{http_code}\n' https://raid.example.org/api/reference   # 200
+   ```
+
+   Sur le NAS, sur le port local, sans l'en-tête : refus, jamais de repli sur l'adresse du pair.
+
+   ```sh
+   curl -sS -w '\n%{http_code}\n' http://127.0.0.1:8080/api/reference
+   # 400 et "code":"limit.client_ip_missing"
+   curl -sS -o /dev/null -w '%{http_code}\n' -H 'X-Client-IP: 127.0.0.1' \
+       http://127.0.0.1:8080/api/reference                                          # 200
+   ```
+
+   Un 400 via le VPS signale que `header_up X-Client-IP {remote_host}` manque dans son Caddyfile
+   (§7).
+5. **Relecture du compose déployé.** Sur le NAS :
+
+   ```sh
+   cd ~aion2-deploy/aion2-raid-planner
+   docker compose -f deploy/docker-compose.yml config
+   ```
+
+   Vérifier, contre l'intent §4 : `user: "10001:10001"`, `read_only: true`, `cap_drop: [ALL]`,
+   `no-new-privileges:true`, ni `privileged`, ni `pid: host`, ni `network_mode: host`, ni socket
+   Docker, ni montage d'un répertoire du NAS (seul le volume nommé `/data`), port publié sur
+   `127.0.0.1` seulement, secrets venus de `deploy/.env` (droits `600`).
+6. **Relecture des en-têtes.** Refaire les deux `curl -D -` du §9 et vérifier la liste attendue :
+   HSTS, CSP exacte, `referrer-policy`, `x-content-type-options`, `x-app-build` égal au commit,
+   `cache-control: no-store` sur `/api/*`, aucun en-tête `server`.

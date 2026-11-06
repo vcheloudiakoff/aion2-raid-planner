@@ -50,6 +50,12 @@ codes! {
     AuthMissing => "auth.missing", UNAUTHORIZED;
     AuthNotFound => "auth.not_found", NOT_FOUND;
     AuthWrongRight => "auth.wrong_right", FORBIDDEN;
+    FormRejected => "form.rejected", BAD_REQUEST;
+    FormTokenInvalid => "form.token_invalid", BAD_REQUEST;
+    FormTooFast => "form.too_fast", BAD_REQUEST;
+    LimitClientIpMissing => "limit.client_ip_missing", BAD_REQUEST;
+    LimitPaused => "limit.paused", SERVICE_UNAVAILABLE;
+    LimitRateLimited => "limit.rate_limited", TOO_MANY_REQUESTS;
     ReferenceUnavailable => "reference.unavailable", SERVICE_UNAVAILABLE;
     ServerNotFound => "server.not_found", NOT_FOUND;
     ServerMethodNotAllowed => "server.method_not_allowed", METHOD_NOT_ALLOWED;

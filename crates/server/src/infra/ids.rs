@@ -13,6 +13,8 @@ pub const ID_BYTES: usize = 16;
 pub const ID_LEN: usize = 22;
 pub const SECRET_BYTES: usize = 32;
 pub const SECRET_LEN: usize = 43;
+/// Nonce du jeton de formulaire (AD-7).
+pub const NONCE_BYTES: usize = 16;
 
 /// Identifiant public, indevinable, sans ordre.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -50,6 +52,8 @@ impl fmt::Debug for Secret {
 pub trait IdGenerator: Send + Sync {
     fn public_id(&self) -> PublicId;
     fn secret(&self) -> Secret;
+    /// Octets aléatoires du jeton de formulaire.
+    fn nonce(&self) -> [u8; NONCE_BYTES];
 }
 
 /// Générateur de production : `rand::rng()`, CSPRNG ChaCha ensemencé par le système.
@@ -67,6 +71,12 @@ impl IdGenerator for SystemIdGenerator {
         let mut bytes = [0u8; SECRET_BYTES];
         rand::rng().fill_bytes(&mut bytes);
         Secret(BASE64URL_NOPAD.encode(&bytes))
+    }
+
+    fn nonce(&self) -> [u8; NONCE_BYTES] {
+        let mut bytes = [0u8; NONCE_BYTES];
+        rand::rng().fill_bytes(&mut bytes);
+        bytes
     }
 }
 
@@ -98,6 +108,10 @@ impl IdGenerator for DeterministicIdGenerator {
 
     fn secret(&self) -> Secret {
         Secret(BASE64URL_NOPAD.encode(&self.bytes::<SECRET_BYTES>(b's')))
+    }
+
+    fn nonce(&self) -> [u8; NONCE_BYTES] {
+        self.bytes::<NONCE_BYTES>(b'n')
     }
 }
 
@@ -133,6 +147,7 @@ mod tests {
         );
         assert_ne!(g.secret(), g.secret());
         assert_ne!(g.public_id(), g.public_id());
+        assert_ne!(g.nonce(), g.nonce());
     }
 
     #[test]

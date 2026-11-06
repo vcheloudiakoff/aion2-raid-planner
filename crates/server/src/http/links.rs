@@ -261,6 +261,7 @@ mod tests {
             Arc::new(FixedClock::new("2026-11-06T10:00:00Z".parse().unwrap())),
             ids.clone(),
             ReferenceStore::new(),
+            &crate::config::test_config(&[]),
         );
         let [e, f, c, d] = [(); 4].map(|_| ids.public_id().to_string());
         let (organizer, join, participant) = (ids.secret(), ids.secret(), ids.secret());

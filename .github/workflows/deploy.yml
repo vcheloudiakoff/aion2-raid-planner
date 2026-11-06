@@ -163,9 +163,16 @@ jobs:
           for ip in $host_ips; do test "$ip" = 127.0.0.1; done
           # Au moins un processus, tous en 10001:10001.
           docker top "$cid" -o pid,uid,gid | awk 'NR > 1 { n++; if ($2 != 10001 || $3 != 10001) bad = 1 } END { exit (bad || n == 0) }'
-          status=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/reference)
+          # Route à clé (AD-7) : l'IP visiteur vient de l'en-tête que pose le Caddy du VPS.
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -H 'X-Client-IP: 127.0.0.1' http://127.0.0.1:8080/api/reference)
           echo "GET /api/reference: $status"
           test "$status" = 200
+          # Sans l'en-tête : 400 limit.client_ip_missing, jamais de repli sur l'adresse du pair.
+          body=$(curl -sS -w '\n%{http_code}' http://127.0.0.1:8080/api/reference)
+          status=$(printf '%s\n' "$body" | tail -n 1)
+          echo "GET /api/reference without X-Client-IP: $status"
+          test "$status" = 400
+          printf '%s\n' "$body" | grep -q '"code":"limit.client_ip_missing"'
           # Révision portée par l'image (base du job deploy) et par le binaire.
           revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' aion2-raid-planner:local)
           test "$revision" = "$GITHUB_SHA"
@@ -188,7 +195,7 @@ jobs:
           $compose up -d --no-build --wait --wait-timeout 120
           cid=$($compose ps -q server)
           test "$(inspect '{{.State.Health.Status}}')" = healthy
-          status=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/reference)
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -H 'X-Client-IP: 127.0.0.1' http://127.0.0.1:8080/api/reference)
           echo "GET /api/reference after restore: $status"
           test "$status" = 200
 

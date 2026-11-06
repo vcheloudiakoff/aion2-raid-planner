@@ -4,6 +4,13 @@
 use domain::reference as r;
 use serde::Serialize;
 
+/// Réponse de `GET /api/form-token` : jeton opaque à renvoyer tel quel dans `formToken`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormToken {
+    pub token: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Label {

@@ -273,3 +273,65 @@ async fn embedded_web_dist() {
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 }
+
+/// Story 1-7 : les routes `read` exigent l'IP visiteur, `nokey` non.
+#[tokio::test]
+async fn keyed_routes_require_client_ip_nokey_routes_do_not() {
+    let router = fixture_router(memory_state("client_ip_classes").await);
+    for uri in ["/api/reference", "/api/form-token?class=create"] {
+        let (res, body) = send_bare(&router, Method::GET, uri, &[]).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{uri}");
+        assert_problem(&res, &body, "limit.client_ip_missing", uri);
+        assert_eq!(header(&res, "x-app-build"), APP_BUILD, "{uri}");
+        let (res, body) = send_bare(
+            &router,
+            Method::GET,
+            uri,
+            &[("x-forwarded-for", TEST_CLIENT_IP)],
+        )
+        .await;
+        assert_problem(&res, &body, "limit.client_ip_missing", uri);
+    }
+    let (res, _) = send_bare(&router, Method::GET, "/api/health", &[]).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let (res, body) = send_bare(&router, Method::GET, "/api/nope", &[]).await;
+    assert_problem(&res, &body, "server.not_found", "/api/nope");
+    let (res, body) = send_bare(&router, Method::DELETE, "/api/reference", &[]).await;
+    assert_problem(
+        &res,
+        &body,
+        "server.method_not_allowed",
+        "DELETE /api/reference",
+    );
+    let (res, body) = send_bare(&router, Method::GET, "/", &[]).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(body, FIXTURE_INDEX);
+    let (res, _) = send_bare(&router, Method::GET, "/assets/app-abc123.js", &[]).await;
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn form_token_is_issued_with_client_ip() {
+    let router = fixture_router(memory_state("form_token_route").await);
+    for class in ["create", "candidature"] {
+        let (res, body) = send(
+            &router,
+            Method::GET,
+            &format!("/api/form-token?class={class}"),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK, "{body}");
+        assert_eq!(header(&res, "cache-control"), "no-store");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let token = v["token"].as_str().unwrap();
+        assert_eq!(v.as_object().unwrap().len(), 1);
+        assert!(
+            token
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
+            "{token}"
+        );
+    }
+    let (res, body) = send(&router, Method::GET, "/api/form-token?class=admin").await;
+    assert_problem(&res, &body, "form.token_invalid", "unknown class");
+}

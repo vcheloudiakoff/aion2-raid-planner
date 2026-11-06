@@ -191,7 +191,7 @@ fn serve() -> ExitCode {
     }
 }
 
-async fn run(_config: Config) -> Result<(), Box<dyn std::error::Error>> {
+async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let db = Db::open(sqlite::file_options(Path::new(sqlite::DB_PATH))).await?;
     db.migrate().await?;
 
@@ -214,7 +214,14 @@ async fn run(_config: Config) -> Result<(), Box<dyn std::error::Error>> {
         tasks::backup::TICK,
     );
 
-    let state = AppState::new(db.clone(), clock, Arc::new(SystemIdGenerator), store);
+    let state = AppState::new(
+        db.clone(),
+        clock,
+        Arc::new(SystemIdGenerator),
+        store,
+        &config,
+    );
+    let _limits = tasks::limits::spawn(state.limits.clone(), tasks::limits::TICK);
 
     let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, LISTEN_PORT));
     let listener = tokio::net::TcpListener::bind(addr).await?;

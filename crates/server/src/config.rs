@@ -145,7 +145,13 @@ impl Config {
             get("MIN_SUBMIT_DELAY_MS"),
             "MIN_SUBMIT_DELAY_MS",
             Duration::from_millis(3000),
-            |v| v.parse().ok().map(Duration::from_millis),
+            // Au moins une heure : tout jeton serait trop jeune ou expiré.
+            |v| {
+                v.parse()
+                    .ok()
+                    .filter(|&ms: &u64| ms < 3_600_000)
+                    .map(Duration::from_millis)
+            },
         )?;
         let positive = |v: &str| v.parse().ok().filter(|&n: &u32| n > 0);
         let max_events_per_hour = parse_or(
@@ -194,6 +200,24 @@ impl Config {
             rust_log,
         })
     }
+}
+
+/// Configuration de test : variables obligatoires remplies, `extra` par-dessus.
+#[cfg(test)]
+pub(crate) fn test_config(extra: &[(&str, &str)]) -> Config {
+    Config::from_source(|k| {
+        extra
+            .iter()
+            .rev()
+            .find(|(name, _)| *name == k)
+            .map(|(_, v)| (*v).to_owned())
+            .or_else(|| match k {
+                "PUBLIC_BASE_URL" => Some("https://raid.example.org".to_owned()),
+                "FORM_TOKEN_SECRET" => Some("0123456789abcdef0123456789abcdef".to_owned()),
+                _ => None,
+            })
+    })
+    .expect("valid test configuration")
 }
 
 /// Chaque directive doit finir sur `off`, `error`, `warn` ou `info` : `debug` et `trace` sont
@@ -350,6 +374,8 @@ mod tests {
             ("CLIENT_IP_HEADER", "bad header"),
             ("TRUST_CLIENT_IP_HEADER", "yes"),
             ("MIN_SUBMIT_DELAY_MS", "-1"),
+            ("MIN_SUBMIT_DELAY_MS", "3600000"),
+            ("MIN_SUBMIT_DELAY_MS", "99999999"),
             ("MAX_EVENTS_PER_HOUR", "0"),
             ("MAX_CANDIDATURES_PER_HOUR", "many"),
             ("RATE_CREATE", "5"),
@@ -373,6 +399,16 @@ mod tests {
                 "{name} error echoes its value"
             );
         }
+    }
+
+    #[test]
+    fn min_submit_delay_just_below_one_hour_is_accepted() {
+        let mut vars = minimal();
+        vars.push(("MIN_SUBMIT_DELAY_MS", "3599999"));
+        assert_eq!(
+            load(&vars).unwrap().min_submit_delay,
+            Duration::from_millis(3_599_999)
+        );
     }
 
     #[test]

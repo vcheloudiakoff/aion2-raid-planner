@@ -65,6 +65,12 @@ export interface ReferenceSet {
   roles: Role[];
 }
 
+/** `GET /api/form-token?class=create|candidature` : jeton opaque, renvoyé tel quel dans le champ
+ * `formToken` du POST, à côté du honeypot `website` laissé vide. */
+export interface FormToken {
+  token: string;
+}
+
 /** Corps `application/problem+json` de toute erreur `/api/*` (RFC 9457). `title` est le libellé HTTP
  * standard, jamais un texte à afficher : le client traduit `errors.<code>`. */
 export interface Problem {
