@@ -2,7 +2,7 @@
 # Image de production : node (SPA) -> rust musl (binaire statique) -> scratch (AD-1, AD-8).
 # Contexte de build = racine du dépôt : `docker compose -f deploy/docker-compose.yml build`.
 
-FROM node:24.22.2-alpine AS web
+FROM node:26.12.1-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
