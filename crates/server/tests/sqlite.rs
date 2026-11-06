@@ -57,15 +57,20 @@ async fn memory_database_shares_one_base_across_pools() {
 }
 
 #[tokio::test]
-async fn no_business_table_exists() {
-    let db = memory_db("no_business_table").await;
+async fn only_links_table_exists() {
+    // Aucune table métier avant l'epic 2 : seuls les liens secrets (1-6).
+    let db = memory_db("only_links_table").await;
     let tables: Vec<(String,)> = sqlx::query_as(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
+         ORDER BY name",
     )
     .fetch_all(&db.read)
     .await
     .unwrap();
-    assert_eq!(tables, vec![("_sqlx_migrations".to_owned(),)]);
+    assert_eq!(
+        tables,
+        vec![("_sqlx_migrations".to_owned(),), ("links".to_owned(),)]
+    );
 }
 
 #[tokio::test]

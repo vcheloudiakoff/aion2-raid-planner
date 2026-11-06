@@ -131,3 +131,40 @@ describe("getJson", () => {
     expect(err.status).toBe(304);
   });
 });
+
+describe("linkSecret", () => {
+  const secret = "A".repeat(43);
+
+  it("sends X-Link-Secret only when given, never in the URL", async () => {
+    const calls = serve(
+      { status: 200, headers: json, body: 1 },
+      { status: 200, headers: json, body: 2 },
+      { status: 200, headers: json, body: 3 },
+    );
+    await getJson("/api/events/e", { linkSecret: secret });
+    await getConditional("/api/events/e", { linkSecret: secret });
+    await getJson("/api/events/e", { linkSecret: "" });
+    expect(calls[0].headers["X-Link-Secret"]).toBe(secret);
+    expect(calls[1].headers["X-Link-Secret"]).toBe(secret);
+    expect(calls[2].headers["X-Link-Secret"]).toBeUndefined();
+    for (const c of calls) expect(c.url).not.toContain(secret);
+  });
+
+  it("never shares a remembered body between two secrets on one URL", async () => {
+    const other = "B".repeat(43);
+    const calls = serve(
+      { status: 200, headers: { ...json, ETag: '"a"' }, body: "for A" },
+      { status: 200, headers: { ...json, ETag: '"b"' }, body: "for B" },
+      { status: 304 },
+      { status: 304 },
+    );
+    await getJson("/api/events/e", { linkSecret: secret });
+    expect(calls[0].headers["If-None-Match"]).toBeUndefined();
+    await getJson("/api/events/e", { linkSecret: other });
+    expect(calls[1].headers["If-None-Match"]).toBeUndefined();
+    expect(await getJson("/api/events/e", { linkSecret: secret })).toBe("for A");
+    expect(calls[2].headers["If-None-Match"]).toBe('"a"');
+    expect(await getJson("/api/events/e", { linkSecret: other })).toBe("for B");
+    expect(calls[3].headers["If-None-Match"]).toBe('"b"');
+  });
+});

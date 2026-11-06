@@ -4,6 +4,7 @@ pub mod assets;
 pub mod dto;
 pub mod errors;
 pub mod headers;
+pub mod links;
 pub mod reference;
 
 use std::future::Future;

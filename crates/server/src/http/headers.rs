@@ -19,6 +19,7 @@ pub const PERMISSIONS_POLICY: &str = "accelerometer=(), camera=(), geolocation=(
 magnetometer=(), microphone=(), payment=(), usb=()";
 
 pub const X_APP_BUILD: HeaderName = HeaderName::from_static("x-app-build");
+pub const X_ROBOTS_TAG: HeaderName = HeaderName::from_static("x-robots-tag");
 pub const PERMISSIONS_POLICY_HEADER: HeaderName = HeaderName::from_static("permissions-policy");
 
 pub const NO_STORE: &str = "no-store";
@@ -29,8 +30,20 @@ pub fn is_api(path: &str) -> bool {
     path == "/api" || path.starts_with("/api/")
 }
 
+/// Préfixes des chemins de la SPA qui portent un secret de lien (AD-3) : `/o`, `/j`, `/p`.
+pub const SECRET_PATH_PREFIXES: &[&str] = &["/o", "/j", "/p"];
+
+/// Chemin de la SPA qui porte un secret : `/o`, `/j`, `/p` ou un de leurs sous-chemins, pas `/old`.
+pub fn is_secret_path(path: &str) -> bool {
+    SECRET_PATH_PREFIXES.iter().any(|prefix| {
+        path.strip_prefix(prefix)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
+}
+
 pub async fn security_headers(req: Request, next: Next) -> Response {
     let api = is_api(req.uri().path());
+    let noindex = !api && is_secret_path(req.uri().path());
     let mut res = next.run(req).await;
     let h = res.headers_mut();
     h.insert(CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP));
@@ -46,5 +59,23 @@ pub async fn security_headers(req: Request, next: Next) -> Response {
     } else if !h.contains_key(CACHE_CONTROL) {
         h.insert(CACHE_CONTROL, HeaderValue::from_static(NO_CACHE));
     }
+    if noindex {
+        h.insert(X_ROBOTS_TAG, HeaderValue::from_static("noindex"));
+    }
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn secret_paths() {
+        for path in ["/o", "/j", "/p", "/o/", "/o/abc", "/j/x", "/p/x/y"] {
+            assert!(is_secret_path(path), "{path}");
+        }
+        for path in ["/", "/old", "/jx", "/pp/x", "/e/abc", "/api/o", "/O/x"] {
+            assert!(!is_secret_path(path), "{path}");
+        }
+    }
 }

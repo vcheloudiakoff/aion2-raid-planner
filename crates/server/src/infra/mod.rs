@@ -3,5 +3,6 @@
 pub mod backup;
 pub mod clock;
 pub mod ids;
+pub mod links;
 pub mod reference;
 pub mod sqlite;

@@ -1,5 +1,6 @@
-// Seul accès à `localStorage` hors `links.ts` (1-6). Tout est enveloppé : stockage bloqué, plein ou
-// absent (navigation privée, cookies refusés) = valeur absente ou écriture ignorée, la page marche.
+// Seul accès bas niveau à `localStorage` : `links.ts` (1-6) et les autres modules passent par lui. Tout est
+// enveloppé : stockage bloqué, plein ou absent (navigation privée, cookies refusés) = valeur absente ou
+// écriture ignorée, la page marche.
 
 function store(): Storage | null {
   try {

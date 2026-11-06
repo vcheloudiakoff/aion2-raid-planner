@@ -47,6 +47,9 @@ macro_rules! codes {
 }
 
 codes! {
+    AuthMissing => "auth.missing", UNAUTHORIZED;
+    AuthNotFound => "auth.not_found", NOT_FOUND;
+    AuthWrongRight => "auth.wrong_right", FORBIDDEN;
     ReferenceUnavailable => "reference.unavailable", SERVICE_UNAVAILABLE;
     ServerNotFound => "server.not_found", NOT_FOUND;
     ServerMethodNotAllowed => "server.method_not_allowed", METHOD_NOT_ALLOWED;

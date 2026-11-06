@@ -2,7 +2,7 @@
 // `etag` + corps par URL et envoie `If-None-Match` ; un 304 rend le corps gardé. Chaque réponse
 // porte `X-App-Build` : un build différent du premier vu lève le drapeau « nouvelle version », sans
 // jamais recharger la page. Un `fetch` rejeté lève le drapeau « hors ligne », la réponse suivante le
-// baisse.
+// baisse. Le client n'envoie que le secret de lien qu'on lui passe, en en-tête.
 
 import { useSyncExternalStore } from "react";
 import type { Problem } from "./types";
@@ -84,10 +84,20 @@ async function problemCode(res: Response): Promise<string | undefined> {
   }
 }
 
+export interface RequestOptions {
+  /** Secret de lien du chemin courant, envoyé dans `X-Link-Secret` et jamais dans l'URL (AD-3). */
+  linkSecret?: string;
+}
+
 /** GET conditionnel : corps, `ETag` et provenance. */
-export async function getConditional<T>(url: string): Promise<Conditional<T>> {
+export async function getConditional<T>(url: string, options: RequestOptions = {}): Promise<Conditional<T>> {
   const headers: Record<string, string> = { Accept: "application/json" };
-  const known = memo.get(url);
+  // Secret vide = absent : le serveur répond 401 `auth.missing`, pas 404.
+  const secret = options.linkSecret || undefined;
+  if (secret) headers["X-Link-Secret"] = secret;
+  // Mémoire par URL et secret : deux droits sur une même URL ne partagent jamais un corps.
+  const key = secret ? `${url}\u0000${secret}` : url;
+  const known = memo.get(key);
   if (known) headers["If-None-Match"] = known.etag;
   let res: Response;
   try {
@@ -115,13 +125,13 @@ export async function getConditional<T>(url: string): Promise<Conditional<T>> {
     throw new ApiError(res.status);
   }
   const etag = res.headers.get("ETag");
-  if (etag) memo.set(url, { etag, body });
-  else memo.delete(url);
+  if (etag) memo.set(key, { etag, body });
+  else memo.delete(key);
   return { body, etag, notModified: false };
 }
 
-export async function getJson<T>(url: string): Promise<T> {
-  return (await getConditional<T>(url)).body;
+export async function getJson<T>(url: string, options: RequestOptions = {}): Promise<T> {
+  return (await getConditional<T>(url, options)).body;
 }
 
 /** Remise à zéro (tests). */

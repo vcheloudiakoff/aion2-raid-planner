@@ -1,4 +1,4 @@
-//! Matrice HTTP de la story 1-1 : santé, SPA, assets, API inconnue, en-têtes.
+//! Matrice HTTP de la story 1-1 : santé, SPA, assets, API inconnue, en-têtes ; `X-Robots-Tag` (1-6).
 
 mod common;
 
@@ -61,7 +61,13 @@ async fn health_ko_when_applied_migration_mismatches() {
         ("checksum", "UPDATE _sqlx_migrations SET checksum = x'00'"),
         ("failed", "UPDATE _sqlx_migrations SET success = 0"),
     ] {
-        let mut state = memory_state(&format!("health_ko_mismatch_{case}")).await;
+        // Base migrée par la seule fixture : ses versions ne croisent pas celles embarquées.
+        let db = server::infra::sqlite::Db::open(server::infra::sqlite::shared_memory_options(
+            &format!("health_ko_mismatch_{case}"),
+        ))
+        .await
+        .unwrap();
+        let mut state = state(db);
         FIXTURE_MIGRATOR.run(&state.db.write).await.unwrap();
         sqlx::query(corruption)
             .execute(&state.db.write)
@@ -102,6 +108,28 @@ async fn spa_routes_serve_index() {
         );
         assert!(res.headers().get("x-app-build").is_none(), "{uri}");
         assert_security_headers(&res);
+    }
+}
+
+#[tokio::test]
+async fn secret_spa_paths_are_noindex() {
+    let router = fixture_router(memory_state("spa_noindex").await);
+    let secret = "A".repeat(server::infra::ids::SECRET_LEN);
+    for uri in [
+        format!("/o/{secret}"),
+        "/j/x".into(),
+        "/p/x".into(),
+        "/o".into(),
+    ] {
+        let (res, body) = send(&router, Method::GET, &uri).await;
+        assert_eq!(res.status(), StatusCode::OK, "{uri}");
+        assert_eq!(body, FIXTURE_INDEX, "{uri}");
+        assert_eq!(header(&res, "x-robots-tag"), "noindex", "{uri}");
+        assert_security_headers(&res);
+    }
+    for uri in ["/", "/old", "/e/abc", "/api/health"] {
+        let (res, _) = send(&router, Method::GET, uri).await;
+        assert!(res.headers().get("x-robots-tag").is_none(), "{uri}");
     }
 }
 
