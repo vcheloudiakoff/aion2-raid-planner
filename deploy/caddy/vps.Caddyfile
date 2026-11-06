@@ -1,0 +1,29 @@
+# Edge public sur le VPS (AD-9) : bloc de site à ajouter au Caddyfile existant du VPS.
+# Placeholders à remplacer sur le VPS seulement, jamais dans le dépôt :
+#   raid.example.org  nom public de l'outil (zone DNS sans aucun enregistrement vers le domicile)
+#   NAS_TUNNEL_IP     adresse WireGuard du NAS, de l'autre côté du tunnel
+# Le transport est ici ; tous les autres en-têtes (CSP, Referrer-Policy, nosniff, Cache-Control,
+# X-App-Build...) sont posés par l'application : ne pas les ajouter, un seul propriétaire par en-tête.
+# Aucune directive `log` : pas de journal d'accès, donc aucune IP conservée à l'edge.
+
+raid.example.org {
+	# TLS automatique (ACME) : le certificat est obtenu et renouvelé par Caddy pour ce nom.
+
+	# Compression des réponses (le NAS sert en clair, sans compression).
+	encode zstd gzip
+
+	header {
+		# HSTS : le navigateur refuse ensuite tout accès en HTTP clair à ce nom pendant un an.
+		Strict-Transport-Security "max-age=31536000"
+		# Retire `Server` (celui du VPS comme celui relayé depuis le NAS) : la pile n'est pas annoncée.
+		-Server
+	}
+
+	# Relaie toutes les méthodes, telles quelles, vers le Caddy du NAS à travers le tunnel ; l'en-tête
+	# Host d'origine est conservé, c'est lui que le bloc du NAS attend.
+	reverse_proxy NAS_TUNNEL_IP:80 {
+		# IP du client vue par le VPS ; remplace toute valeur envoyée par le client, qui ne peut donc
+		# pas usurper l'adresse comptée par les limiteurs de l'application.
+		header_up X-Client-IP {remote_host}
+	}
+}

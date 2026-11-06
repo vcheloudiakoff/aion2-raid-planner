@@ -1,4 +1,5 @@
-//! Point d'entrée : sous-commandes `serve` (défaut), `healthcheck` et `validate-reference`.
+//! Point d'entrée : sous-commandes `serve` (défaut), `healthcheck`, `validate-reference`, `backup`
+//! et `restore`.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
@@ -8,7 +9,8 @@ use std::sync::Arc;
 use server::app::AppState;
 use server::app::tasks;
 use server::config::{Config, LISTEN_PORT};
-use server::infra::clock::SystemClock;
+use server::infra::backup::{self, Kind};
+use server::infra::clock::{Clock, SystemClock};
 use server::infra::ids::SystemIdGenerator;
 use server::infra::reference::{self, Loader, ReferenceStore};
 use server::infra::sqlite::{self, Db};
@@ -31,11 +33,102 @@ fn main() -> ExitCode {
                 }
             }
         }
-        _ => {
-            eprintln!("usage: server [serve | healthcheck | validate-reference [DIR]]");
-            ExitCode::from(2)
+        // Sans `Config` ni migration : lancé par le déploiement dans le conteneur en place.
+        (Some("backup"), kind, None) => {
+            match kind.as_deref().map_or(Some(Kind::PreDeploy), Kind::parse) {
+                Some(kind) => run_blocking(backup_now(kind)),
+                None => usage(),
+            }
+        }
+        // Service arrêté : `docker compose run --rm server restore NOM`.
+        (Some("restore"), None, None) => list_backups(),
+        (Some("restore"), Some(name), None) => run_blocking(restore(name)),
+        _ => usage(),
+    }
+}
+
+fn usage() -> ExitCode {
+    eprintln!(
+        "usage: server [serve | healthcheck | validate-reference [DIR] | backup [daily | pre-deploy] | restore [NAME]]"
+    );
+    ExitCode::from(2)
+}
+
+/// Exécute une sous-commande asynchrone sur un runtime à un fil ; erreur = code 1.
+fn run_blocking(
+    fut: impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>>,
+) -> ExitCode {
+    let result = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(Into::into)
+        .and_then(|rt| rt.block_on(fut));
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
         }
     }
+}
+
+/// Sauvegarde immédiate puis rotation ; le nom écrit sort seul sur stdout.
+async fn backup_now(kind: Kind) -> Result<(), Box<dyn std::error::Error>> {
+    // La base doit exister : pas de fichier vide créé par une sauvegarde.
+    let options = sqlite::with_pragmas(
+        sqlite::file_options(Path::new(sqlite::DB_PATH)).create_if_missing(false),
+    );
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options)
+        .await?;
+    let now = SystemClock.now();
+    let dir = Path::new(backup::BACKUP_DIR);
+    let result = backup::vacuum_into(&pool, dir, kind, now).await;
+    pool.close().await;
+    let name = result?;
+    // Le nom d'abord : un souci de rotation n'empêche pas un déploiement dont la sauvegarde existe.
+    println!("{name}");
+    match backup::prune(dir, now) {
+        Ok(removed) => {
+            for r in removed {
+                eprintln!("old backup removed: {r}");
+            }
+        }
+        Err(e) => eprintln!("warning: backup rotation failed: {e}"),
+    }
+    Ok(())
+}
+
+/// Sans argument : liste des sauvegardes, code 2.
+fn list_backups() -> ExitCode {
+    match backup::list(Path::new(backup::BACKUP_DIR)) {
+        Ok(list) => {
+            for b in &list {
+                println!("{}", b.name);
+            }
+            eprintln!(
+                "usage: server restore NAME ({} backups listed above)",
+                list.len()
+            );
+            ExitCode::from(2)
+        }
+        Err(e) => {
+            eprintln!("error: cannot list backups: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn restore(name: String) -> Result<(), Box<dyn std::error::Error>> {
+    backup::restore(
+        Path::new(backup::BACKUP_DIR),
+        &name,
+        Path::new(sqlite::DB_PATH),
+    )
+    .await?;
+    println!("restored {name}");
+    Ok(())
 }
 
 /// Même validation qu'au démarrage et au rechargement, sans repli sur le jeu embarqué.
@@ -106,12 +199,15 @@ async fn run(_config: Config) -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let _reload = tasks::reload::spawn(loader, tasks::reload::TICK);
 
-    let state = AppState::new(
-        db.clone(),
-        Arc::new(SystemClock),
-        Arc::new(SystemIdGenerator),
-        store,
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let _backup = tasks::backup::spawn(
+        db.read.clone(),
+        clock.clone(),
+        backup::BACKUP_DIR.into(),
+        tasks::backup::TICK,
     );
+
+    let state = AppState::new(db.clone(), clock, Arc::new(SystemIdGenerator), store);
 
     let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, LISTEN_PORT));
     let listener = tokio::net::TcpListener::bind(addr).await?;

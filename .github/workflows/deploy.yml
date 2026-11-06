@@ -1,6 +1,6 @@
-# CI puis (story 1-4) déploiement sur le NAS (AD-10).
+# CI puis déploiement sur le NAS (AD-10).
 # Déclencheurs limités à push sur main et lancement manuel : aucun workflow de pull request ni de fork
-# n'atteindra le futur runner du NAS (check-hardening.sh le refuse).
+# n'atteint le runner du NAS (check-hardening.sh le refuse). Procédure : deploy/README.md.
 # Actions épinglées par SHA complet, version en commentaire ; Dependabot les fait monter.
 
 name: deploy
@@ -113,6 +113,9 @@ jobs:
       - name: check-hardening (tests)
         run: sh deploy/tests/check-hardening.test.sh
 
+      - name: plan-deploy (tests)
+        run: sh deploy/tests/plan-deploy.test.sh
+
       # --- Fumée : image construite, conteneur healthy, non-root, référence servie --------------
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -157,6 +160,31 @@ jobs:
           status=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/reference)
           echo "GET /api/reference: $status"
           test "$status" = 200
+          # Révision portée par l'image (base du job deploy) et par le binaire.
+          revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' aion2-raid-planner:local)
+          test "$revision" = "$GITHUB_SHA"
+          build=$(curl -sS -D - -o /dev/null http://127.0.0.1:8080/api/health | tr -d '\r' | awk -F ': *' 'tolower($1) == "x-app-build" { print $2 }')
+          test "$build" = "$GITHUB_SHA"
+
+          # Gestes du job deploy et de la restauration de deploy/README.md, dans le même ordre.
+          $compose cp reference/. server:/data/reference/
+          name=$($compose exec -T server /server backup pre-deploy)
+          echo "backup: $name"
+          case $name in pre-deploy-*.db) ;; *) exit 1 ;; esac
+          $compose stop server
+          code=0
+          $compose run --rm --no-deps server restore > "$RUNNER_TEMP/backups.txt" || code=$?
+          test "$code" = 2
+          grep -qxF "$name" "$RUNNER_TEMP/backups.txt"
+          # La sauvegarde quotidienne est lancée par `serve` dès son démarrage.
+          grep -q '^daily-.*\.db$' "$RUNNER_TEMP/backups.txt"
+          $compose run --rm --no-deps server restore "$name"
+          $compose up -d --no-build --wait --wait-timeout 120
+          cid=$($compose ps -q server)
+          test "$(inspect '{{.State.Health.Status}}')" = healthy
+          status=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/reference)
+          echo "GET /api/reference after restore: $status"
+          test "$status" = 200
 
       - name: Journaux du conteneur
         if: failure()
@@ -169,3 +197,124 @@ jobs:
         run: |
           [ -f "$RUNNER_TEMP/smoke.env" ] || exit 0
           docker compose -f deploy/docker-compose.yml --env-file "$RUNNER_TEMP/smoke.env" down -v
+
+  # --- Déploiement sur le NAS (AD-10) ----------------------------------------------------------
+  # Runner de dépôt sur le NAS, sous l'utilisateur dédié `aion2-deploy` (deploy/README.md). Ni
+  # `actions/checkout` ni secret : le clone `$HOME/aion2-raid-planner` est remis sur le commit testé
+  # par `ci`, et `deploy/.env` (non versionné) n'existe que sur le NAS.
+  deploy:
+    needs: ci
+    # `workflow_dispatch` peut viser une autre branche : seule `main` atteint le NAS.
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, nas]
+    timeout-minutes: 30
+    concurrency:
+      group: deploy-nas
+      cancel-in-progress: false
+    # Aucun jeton GitHub : le clone est public et rien n'est publié.
+    permissions: {}
+    defaults:
+      run:
+        shell: bash
+    env:
+      COMPOSE_FILE: deploy/docker-compose.yml
+      IMAGE: aion2-raid-planner:local
+    steps:
+      - name: Clone du NAS sur le commit testé
+        id: sync
+        run: |
+          cd "$HOME/aion2-raid-planner"
+          git fetch --quiet --no-tags origin main
+          # Run ancien (ci fini après un plus récent, ou relancé) : rien à faire, job vert.
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+            echo "::notice::Superseded: $GITHUB_SHA is not the tip of main, a newer commit deploys instead."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # `main` a pu avancer ou être réécrite depuis : le commit testé est demandé explicitement.
+          git cat-file -e "$GITHUB_SHA^{commit}" 2>/dev/null || git fetch --quiet --no-tags origin "$GITHUB_SHA"
+          git reset --quiet --hard "$GITHUB_SHA"
+          # Fichiers non suivis hors du contexte de build ; sans -x, `deploy/.env` (ignoré) reste.
+          git clean -ffdq
+          git log -1 --format='deploying %H'
+
+      - name: Plan
+        id: plan
+        if: steps.sync.outputs.skip != '1'
+        run: |
+          cd "$HOME/aion2-raid-planner"
+          # Base = révision de l'image en place, pas le HEAD du clone : un push refusé laisse le
+          # HEAD avancé, et la comparaison suivante laisserait passer sa migration modifiée.
+          # Image du conteneur existant d'abord : un tag reconstruit sans remplacement du conteneur
+          # n'a jamais tourné. Le tag ne sert que s'il n'y a pas de conteneur.
+          cid=$(docker compose ps -aq server)
+          if [ -n "$cid" ]; then
+            ref=$(docker inspect --format '{{.Image}}' "$cid")
+          elif [ -n "$(docker image ls -q "$IMAGE")" ]; then
+            ref=$IMAGE
+          else
+            ref=""
+          fi
+          if [ -z "$ref" ]; then
+            base=""
+            echo "::warning::Premier déploiement : aucune image en place, construction complète sans garde-fou ni sauvegarde préalable."
+          else
+            base=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$ref")
+            # Image sans label : base inconnue, refusée par plan-deploy.sh.
+            base=${base:-missing}
+          fi
+          echo "base: ${base:-none}"
+          sh deploy/plan-deploy.sh "$base" "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Sauvegarde pre-deploy (migration ajoutée)
+        if: steps.sync.outputs.skip != '1' && steps.plan.outputs.backup == '1'
+        run: |
+          cd "$HOME/aion2-raid-planner"
+          docker compose exec -T server /server backup pre-deploy
+
+      - name: Construction et remplacement du conteneur
+        if: steps.sync.outputs.skip != '1'
+        env:
+          REBUILD: ${{ steps.plan.outputs.rebuild }}
+        run: |
+          cd "$HOME/aion2-raid-planner"
+          # Toujours `up -d` : redémarre un conteneur arrêté (après une restauration, par exemple).
+          if [ "$REBUILD" = 1 ]; then
+            APP_BUILD=$GITHUB_SHA docker compose up -d --build
+          else
+            docker compose up -d --no-build
+          fi
+
+      - name: Référence du jeu
+        if: steps.sync.outputs.skip != '1'
+        run: |
+          cd "$HOME/aion2-raid-planner"
+          docker compose cp reference/. server:/data/reference/
+
+      - name: Santé
+        if: steps.sync.outputs.skip != '1'
+        env:
+          REBUILT: ${{ steps.plan.outputs.rebuild }}
+        run: |
+          cd "$HOME/aion2-raid-planner"
+          addr=$(docker compose port server 8080)
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if headers=$(curl -fsS --max-time 5 -D - -o /dev/null "http://$addr/api/health"); then
+              build=$(printf '%s' "$headers" | tr -d '\r' | awk -F ': *' 'tolower($1) == "x-app-build" { print $2 }')
+              if [ "$REBUILT" != 1 ] || [ "$build" = "$GITHUB_SHA" ]; then
+                echo "healthy (attempt $attempt, build $build)"
+                exit 0
+              fi
+              echo "attempt $attempt: X-App-Build is $build, expected $GITHUB_SHA"
+            fi
+            sleep 6
+          done
+          echo "::error::/api/health not green after 10 attempts"
+          exit 1
+
+      - name: Journaux du conteneur
+        if: failure()
+        run: |
+          cd "$HOME/aion2-raid-planner"
+          docker compose ps
+          docker compose logs --no-color --tail 200 server

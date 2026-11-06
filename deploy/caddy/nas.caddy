@@ -1,0 +1,23 @@
+# Bloc du site sur le Caddy du NAS (service de l'hôte, AD-9) : à ajouter à son Caddyfile.
+# HTTP seulement : le TLS est terminé sur le VPS, seul client admis, à travers le tunnel WireGuard.
+# Placeholders à remplacer sur le NAS seulement, jamais dans le dépôt :
+#   raid.example.org  nom public de l'outil, le même que sur le VPS (en-tête Host relayé)
+#   VPS_TUNNEL_IP     adresse WireGuard du VPS, de l'autre côté du tunnel
+#   8080              PORT de deploy/.env si le défaut a été changé (garder 127.0.0.1, pas
+#                     localhost : le port n'est publié qu'en IPv4)
+# Aucune directive `log` : pas de journal d'accès, donc aucune IP conservée sur le NAS.
+
+http://raid.example.org {
+	# Tout client dont l'adresse n'est pas celle du VPS dans le tunnel (LAN, autre hôte, scan).
+	@nottunnel not remote_ip VPS_TUNNEL_IP
+
+	# En premier : connexion coupée sans réponse pour ces clients, le site n'existe pas pour eux.
+	handle @nottunnel {
+		abort
+	}
+
+	# Seul le VPS arrive ici : relais vers le conteneur, lié à la boucle locale uniquement.
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}

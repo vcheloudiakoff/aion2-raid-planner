@@ -21,3 +21,9 @@
 - source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-3-conteneur-durci-et-ci-complete.md`
   summary: En 1-4, consigner et vérifier les versions minimales du NAS (Compose ≥ 2.24 pour `env_file.required`, Engine ≥ 25 pour `healthcheck.start_interval`) et poser la garde côté runner contre les workflows de fork (approbation obligatoire, runner limité au dépôt).
   evidence: un workflow ajouté par une PR de fork s'exécute avant que `check-hardening.sh` ne le voie ; AD-10 prévoit déjà l'approbation des contributeurs externes.
+- source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-4-deploiement-par-runner-edge-et-sauvegardes.md`
+  summary: Tester en CI le lien entre la sortie de `plan-deploy.sh` et les `if:` du job `deploy` (extraire le job en script exécutable hors du NAS).
+  evidence: une clé renommée ou mal tapée dans `steps.plan.outputs.*` laisse la CI verte et saute la sauvegarde `pre-deploy` en production.
+- source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-4-deploiement-par-runner-edge-et-sauvegardes.md`
+  summary: Rendre visible un échec durable de la sauvegarde quotidienne (âge de la dernière `daily` exposé par la santé ou contrôlé par le job `deploy`).
+  evidence: aujourd'hui seul `tracing` le signale, avec des journaux bornés à 3 × 10 Mo ; une sauvegarde cassée ne se découvrirait qu'au moment de restaurer.

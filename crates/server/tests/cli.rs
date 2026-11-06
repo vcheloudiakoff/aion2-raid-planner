@@ -21,7 +21,14 @@ fn stderr(out: &Output) -> String {
 
 #[test]
 fn unknown_argument_exits_2_with_usage() {
-    for args in [&["bogus"][..], &["serve", "extra"], &["healthcheck", "x"]] {
+    for args in [
+        &["bogus"][..],
+        &["serve", "extra"],
+        &["healthcheck", "x"],
+        &["backup", "weekly"],
+        &["backup", "daily", "x"],
+        &["restore", "a", "b"],
+    ] {
         let out = run(&mut server(args));
         assert_eq!(out.status.code(), Some(2), "{args:?}");
         assert!(stderr(&out).contains("usage:"), "{args:?}");
@@ -77,4 +84,48 @@ fn validate_reference_accepts_the_repository_set() {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../reference");
     let out = run(&mut server(&["validate-reference", dir]));
     assert!(out.status.success(), "{}", stderr(&out));
+}
+
+// `backup` et `restore` travaillent sur les chemins fixes `/data/...` du conteneur ; sur le poste,
+// `/data/backups` est absent et ces tests vérifient seulement les codes de sortie. Le comportement
+// sur fichiers est testé dans `infra::backup` et par la fumée du compose en CI.
+
+#[test]
+fn restore_without_name_lists_and_exits_2() {
+    if std::path::Path::new("/data/backups").exists() {
+        eprintln!("skipped: /data/backups exists on this machine");
+        return;
+    }
+    let out = run(&mut server(&["restore"]));
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    assert!(stderr(&out).contains("restore NAME"));
+}
+
+#[test]
+fn restore_of_unknown_backup_fails_without_usage() {
+    let out = run(&mut server(&["restore", "daily-20261106T000000Z.db"]));
+    assert!(!out.status.success());
+    assert_ne!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("unknown backup"), "{}", stderr(&out));
+}
+
+#[test]
+fn backup_without_database_fails_without_creating_it() {
+    if std::path::Path::new("/data/app.db").exists() {
+        eprintln!("skipped: /data/app.db exists on this machine");
+        return;
+    }
+    for args in [
+        &["backup"][..],
+        &["backup", "daily"],
+        &["backup", "pre-deploy"],
+    ] {
+        let out = run(&mut server(args));
+        assert!(!out.status.success(), "{args:?}");
+        assert_ne!(out.status.code(), Some(2), "{args:?}");
+        assert!(out.stdout.is_empty(), "{args:?}");
+        assert!(stderr(&out).contains("error:"), "{args:?}");
+    }
+    assert!(!std::path::Path::new("/data/app.db").exists());
 }

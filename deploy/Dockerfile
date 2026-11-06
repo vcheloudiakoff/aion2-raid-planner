@@ -27,6 +27,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 RUN mkdir -p /out/data/reference /out/data/backups
 
 FROM scratch
+# Révision construite, lue par le job `deploy` comme base de comparaison (AD-10).
+ARG APP_BUILD=dev
+LABEL org.opencontainers.image.revision=$APP_BUILD
 COPY --from=build /server /server
 COPY --from=build --chown=10001:10001 /out/data /data
 USER 10001:10001
