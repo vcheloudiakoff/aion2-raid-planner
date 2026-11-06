@@ -1,0 +1,269 @@
+<title>Raid Planner, comment ça marche</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+  /* Layout : une colonne de lecture (68ch), sommaire en tête, bandeau pleine largeur pour le schéma.
+     Lumière élyséenne en clair, nuit asmodienne en sombre : les deux factions du jeu. */
+  :root {
+    --bg: #f7f5ef;
+    --bg-2: #ece8dd;
+    --fg: #1f2430;
+    --muted: #5d6474;
+    --line: #d9d3c4;
+    --accent: #2f4f9e;
+    --accent-2: #b8741a;
+    --font-display: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+    --font-body: "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141823; --bg-2: #1c2130; --fg: #e8e6df; --muted: #a3a8b8; --line: #2f3648;
+      --accent: #9db4f5; --accent-2: #e2a94f; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141823; --bg-2: #1c2130; --fg: #e8e6df; --muted: #a3a8b8; --line: #2f3648;
+    --accent: #9db4f5; --accent-2: #e2a94f; color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 17px; line-height: 1.55; margin: 0; }
+  .wrap {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 32px 64px;
+  }
+  .col { max-width: 68ch; margin-inline: auto; min-width: 0; }
+  h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; }
+  h1 { font-size: clamp(30px, 5vw, 42px); font-weight: 700; margin: 0 0 8px; }
+  h2 { font-size: 24px; font-weight: 600; margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--line); }
+  h3 { font-size: 18px; font-weight: 600; margin: 24px 0 6px; }
+  p { margin: 0 0 14px; }
+  .eyebrow { font-family: var(--font-display); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .lede { font-size: 19px; color: var(--muted); margin-bottom: 24px; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 20px 0 8px; }
+  .fact { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; min-width: 0; }
+  .fact b { display: block; font-family: var(--font-display); font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
+  .fact span { color: var(--muted); font-size: 14px; }
+  nav.toc { margin: 24px 0 0; padding: 14px 16px; background: var(--bg-2); border-radius: 6px; }
+  nav.toc ol { margin: 6px 0 0; padding-left: 20px; columns: 2; column-gap: 24px; }
+  nav.toc li { break-inside: avoid; margin: 2px 0; }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+  a.mark { font-family: var(--font-display); font-size: 12px; letter-spacing: .04em; color: var(--accent-2); text-decoration: none; border: 1px solid currentColor; border-radius: 999px; padding: 0 7px; white-space: nowrap; vertical-align: middle; }
+  ul, ol { padding-left: 22px; margin: 0 0 14px; }
+  li { margin: 4px 0; }
+  code { font-family: var(--font-mono); font-size: .88em; background: var(--bg-2); padding: 1px 5px; border-radius: 4px; }
+  .band { background: var(--bg-2); margin: 20px calc(-1 * max(16px, env(safe-area-inset-right, 0px))) 20px calc(-1 * max(16px, env(safe-area-inset-left, 0px))); }
+  .band .inner { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px; max-width: 76ch; margin-inline: auto; }
+  .diagram { overflow-x: auto; }
+  .diagram svg { display: block; width: 100%; max-width: 760px; height: auto; margin-inline: auto; }
+  .steps { list-style: none; padding: 0; margin: 12px 0 18px; counter-reset: s; }
+  .steps li { position: relative; padding-left: 44px; margin: 0 0 14px; counter-increment: s; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 2px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--bg); font-family: var(--font-display); font-weight: 600; font-size: 14px; display: grid; place-items: center; }
+  .steps li b { font-family: var(--font-display); font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 15.5px; margin: 6px 0 18px; }
+  .tablewrap { overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .why { color: var(--muted); }
+  .review { border-left: 4px solid var(--accent-2); padding: 2px 0 2px 14px; margin: 0 0 14px; scroll-margin-top: 16px; }
+  .review b { font-family: var(--font-display); font-weight: 600; }
+  .review .if { color: var(--muted); font-size: 15.5px; }
+  .tag { display: inline-block; font-family: var(--font-display); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+  .next { border: 1px solid var(--accent); border-radius: 6px; padding: 14px 16px; margin-top: 20px; }
+  @media (max-width: 520px) { nav.toc ol { columns: 1; } body { font-size: 16px; } }
+</style>
+
+<div class="wrap"><div class="col">
+
+<div class="eyebrow">aion2-raid-planner · architecture expliquée sans jargon · 5 novembre 2026</div>
+<h1>Raid Planner, comment ça marche</h1>
+<p class="lede">Ce que la spine d'architecture (le document de décisions, dans le dépôt) a fixé, raconté pour toi qui vas utiliser l'outil et l'héberger. Les mots techniques sont expliqués au passage. La fin liste une question ouverte et dix choix que tu dois relire ; dans le corps, un repère <a class="mark" href="#relire">à relire</a> renvoie à chacun.</p>
+
+<div class="facts">
+  <div class="fact"><b>1</b><span>programme, un seul conteneur sur le NAS</span></div>
+  <div class="fact"><b>1</b><span>fichier de données, sauvegardé chaque nuit</span></div>
+  <div class="fact"><b>0</b><span>compte, mot de passe ou e-mail</span></div>
+  <div class="fact"><b>0</b><span>service tiers, 0 connexion sortante</span></div>
+</div>
+
+<nav class="toc" aria-label="Sommaire">
+  <div class="eyebrow">Sommaire</div>
+  <ol>
+    <li><a href="#resume">En cinq phrases</a></li>
+    <li><a href="#trajet">Le trajet d'une page</a></li>
+    <li><a href="#boite">Ce qu'il y a dans la boîte</a></li>
+    <li><a href="#liens">Des droits sans compte</a></li>
+    <li><a href="#vie">La vie d'un événement</a></li>
+    <li><a href="#securite">Ce qui protège le NAS et les joueurs</a></li>
+    <li><a href="#exploitation">Mettre en ligne et exploiter</a></li>
+    <li><a href="#relire">Ce que tu dois relire</a></li>
+    <li><a href="#plus-tard">Laissé pour plus tard</a></li>
+    <li><a href="#suite">Et maintenant</a></li>
+  </ol>
+</nav>
+
+<h2 id="resume">En cinq phrases</h2>
+<p>Un organisateur crée un événement de raid et reçoit des liens ; les joueurs de sa légion s'inscrivent depuis ces liens, sans compte. L'outil est un seul programme, écrit en Rust, qui sert aussi bien l'interface que les données, dans un seul conteneur sur ton NAS. Les joueurs y arrivent par le VPS que tu as déjà en production, jamais directement par ta box. Les droits tiennent dans les liens eux-mêmes : qui a le lien d'organisateur organise, qui a son lien de participant modifie sa propre inscription. Tout ce qui pourrait servir d'appui à un attaquant a été retiré : pas de shell dans le conteneur (aucun moyen d'y ouvrir une ligne de commande), pas de connexion sortante, pas de base de données séparée, pas de secret dans le code.</p>
+
+<h2 id="trajet">Le trajet d'une page</h2>
+<p>Quand un joueur ouvre l'outil sur son téléphone, voici ce que traverse sa requête.</p>
+<div class="band"><div class="inner diagram">
+<svg viewBox="0 0 760 250" role="img" aria-label="Trajet d'une requête : téléphone, VPS, tunnel, NAS, conteneur, volume de données">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker>
+  </defs>
+  <g fill="none" stroke="currentColor" stroke-width="1.4" color="var(--muted)">
+    <rect x="12" y="34" width="150" height="92" rx="8"/>
+    <rect x="200" y="34" width="170" height="92" rx="8"/>
+    <rect x="408" y="12" width="340" height="226" rx="10" stroke-dasharray="6 5"/>
+    <rect x="428" y="44" width="300" height="60" rx="8"/>
+    <rect x="428" y="118" width="300" height="60" rx="8"/>
+    <rect x="428" y="192" width="300" height="34" rx="8"/>
+    <path d="M162 80 H198" marker-end="url(#arr)"/>
+    <path d="M370 80 H426" marker-end="url(#arr)"/>
+    <path d="M578 104 V116" marker-end="url(#arr)"/>
+    <path d="M578 178 V190" marker-end="url(#arr)"/>
+  </g>
+  <g font-family="Sora, sans-serif" font-size="13" font-weight="600" fill="var(--fg)">
+    <text x="87" y="64" text-anchor="middle">Le joueur</text>
+    <text x="285" y="64" text-anchor="middle">VPS, déjà en place</text>
+    <text x="578" y="30" text-anchor="middle">Ton NAS, à la maison</text>
+    <text x="578" y="66" text-anchor="middle">Caddy du NAS</text>
+    <text x="578" y="140" text-anchor="middle">Le conteneur Raid Planner</text>
+    <text x="578" y="213" text-anchor="middle">Volume de données</text>
+  </g>
+  <g font-family="Source Sans 3, sans-serif" font-size="12" fill="var(--muted)">
+    <text x="87" y="84" text-anchor="middle">téléphone ou PC</text>
+    <text x="87" y="100" text-anchor="middle">HTTPS</text>
+    <text x="285" y="84" text-anchor="middle">termine le chiffrement</text>
+    <text x="285" y="100" text-anchor="middle">note l'adresse IP du joueur</text>
+    <text x="398" y="70" text-anchor="middle" transform="rotate(-90 398 70)">tunnel chiffré</text>
+    <text x="578" y="86" text-anchor="middle">n'accepte que ce qui vient du tunnel</text>
+    <text x="578" y="160" text-anchor="middle">un seul programme : interface et données</text>
+  </g>
+</svg>
+</div></div>
+<p>Le point important : le tunnel est ouvert <em>depuis</em> le NAS vers le VPS, pas l'inverse. Ta box n'a aucun port ouvert pour cet outil, et l'adresse publique du site est celle du VPS. Le Caddy du NAS refuse tout ce qui n'arrive pas par le tunnel, donc même quelqu'un sur ton réseau local ne peut pas appeler l'outil directement. Le conteneur, lui, n'écoute que sur l'adresse interne du NAS.</p>
+
+<h2 id="boite">Ce qu'il y a dans la boîte</h2>
+<h3>Un seul programme</h3>
+<p>Le programme Rust fait tout. Il répond aux requêtes de l'interface, et il sert aussi l'interface elle-même : les fichiers de l'application React sont emballés dans le programme quand on le construit. Il n'y a donc pas de second conteneur pour le site web, pas de nginx à configurer et à mettre à jour, et une seule entrée à déclarer dans Caddy. La contrepartie : chaque changement dans l'interface reconstruit le programme entier. C'est le runner, le petit agent de déploiement installé sur le NAS (voir « Mettre en ligne et exploiter »), qui le fait : tu ne le vois pas.</p>
+<h3>Un seul fichier de données</h3>
+<p>Les événements, inscriptions et groupes vivent dans un fichier SQLite, dans le volume du conteneur. Il n'y a pas de base PostgreSQL à part : pas de mot de passe de base à garder, pas de port de plus, pas de deuxième service à sauvegarder. Pour l'échelle visée, une légion et son cercle, c'est largement suffisant. Chaque nuit, le programme fait une sauvegarde du fichier dans le même volume ; les deux dernières sauvegardes sont gardées <a class="mark" href="#r-purge">à relire</a>.</p>
+<h3>Cinq fichiers de référence</h3>
+<p>Les régions, les serveurs de jeu avec leur faction et leur abréviation en jeu, les instances avec leur taille de groupe, les classes avec leur rôle, et les rôles eux-mêmes : tout cela vit dans cinq fichiers texte faciles à éditer, dans le dépôt. Rien de tout cela n'est écrit dans le code. Quand NCSoft ajoute un serveur, tu édites le fichier, tu pousses, et le runner copie les fichiers dans le volume sans reconstruire le programme ; le programme les relit en moins d'une minute. Un fichier mal formé est ignoré et signalé dans les journaux ; l'ancienne liste reste en service. Une entrée qu'on retire n'est pas supprimée mais désactivée, pour que les événements déjà créés restent lisibles.</p>
+
+<h2 id="liens">Des droits sans compte</h2>
+<p>Il n'y a ni compte ni mot de passe. À la place, chaque lien porte un droit, et c'est le lien lui-même qui prouve qu'on l'a. Une candidature est une inscription en attente ; acceptée par l'organisateur, elle devient une inscription.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Lien</th><th>Qui l'a</th><th>Ce qu'il permet</th></tr></thead>
+  <tbody>
+    <tr><td>Lien public <code>/e/…</code></td><td>tout le monde, s'il est posté quelque part</td><td>lire l'événement (ses créneaux et le nombre d'inscrits par classe et par rôle, jamais la liste des pseudos <a class="mark" href="#r-public">à relire</a>) et déposer une candidature, que l'organisateur devra accepter</td></tr>
+    <tr><td>Lien direct <code>/j/…</code></td><td>la légion (il est posté sur son Discord)</td><td>déposer une candidature acceptée d'office</td></tr>
+    <tr><td>Lien d'organisateur <code>/o/…</code></td><td>l'organisateur seul, affiché une fois à la création</td><td>tout : trier, verrouiller, composer, annuler</td></tr>
+    <tr><td>Lien de participant <code>/p/…</code></td><td>chaque inscrit, affiché après son inscription</td><td>voir son statut, modifier ou retirer son inscription, confirmer sa présence</td></tr>
+  </tbody>
+</table></div>
+<p>Le navigateur mémorise les liens qu'il a ouverts, ce qui donne la liste « Mes événements » et permet de dupliquer un événement passé. Pour passer d'un appareil à l'autre, on copie le lien <a class="mark" href="#r-secret">à relire</a>. Un lien perdu n'est pas récupérable, c'est voulu : toute porte de récupération serait un compte déguisé. On se réinscrit, ou on laisse l'événement expirer.</p>
+<p>Côté serveur, les liens secrets ne sont jamais stockés en clair : seule une empreinte est gardée, un hachage, c'est-à-dire un calcul qu'on ne peut pas remonter jusqu'au lien. Si quelqu'un mettait la main sur le fichier de données, il n'y trouverait aucun lien utilisable. L'interface envoie le secret dans un en-tête de requête, la partie de l'échange que les journaux n'enregistrent pas, jamais dans l'adresse de la page. Et ouvrir un lien ne modifie jamais rien dans les données : Discord ouvre lui-même les liens qu'on lui colle pour en afficher un aperçu, il ne doit pas pouvoir confirmer une présence à la place d'un joueur.</p>
+
+<h2 id="vie">La vie d'un événement</h2>
+<ol class="steps">
+  <li><b>Création.</b> L'organisateur choisit l'instance, la région, si les deux factions sont bienvenues, un ou plusieurs créneaux, les minimums et maximums par classe, et une note. Il reçoit ses liens. L'événement est listé publiquement, sauf s'il coche « lien seul ».</li>
+  <li><b>Candidatures.</b> Chaque joueur donne son pseudo, son serveur de jeu (la faction s'en déduit), sa classe (le rôle s'en déduit <a class="mark" href="#r-role">à relire</a>), ses points de combat, et coche les créneaux où il est disponible. Par le lien direct, il est accepté d'office ; par le lien public, il attend. Deux candidatures au même pseudo sont signalées, pas bloquées. L'écran de l'organisateur redemande les données toutes les dix secondes : une nouvelle ligne apparaît dans ce délai <a class="mark" href="#r-dix">à relire</a>.</li>
+  <li><b>Tri.</b> L'organisateur voit la grille joueurs × créneaux avec le nombre d'inscrits par classe et par rôle, et accepte ou refuse. Un joueur refusé ou retiré ne peut plus être placé dans un groupe.</li>
+  <li><b>Verrouillage.</b> L'organisateur retient un ou plusieurs créneaux. Chaque créneau retenu devient un groupe <a class="mark" href="#r-verrou">à relire</a>, avec le nombre de places de l'instance (dix pour un Sanctuaire, en deux équipes de cinq), un banc de remplaçants ordonné, et un nom de salle unique généré par l'outil. L'écran donne la recette à reproduire en jeu : nom de la salle, « Faction : All », et le rôle de chaque emplacement.</li>
+  <li><b>Composition.</b> Soit à la main, soit par le bouton « composer automatiquement » : un calcul sans intelligence artificielle, sans réseau, qui donne toujours le même résultat pour les mêmes inscrits, et que l'organisateur corrige avant d'appliquer. Rien n'est écrit tant qu'il n'a pas appliqué.</li>
+  <li><b>Confirmation de présence.</b> L'organisateur demande aux titulaires de confirmer avant une heure qu'il choisit. Passée l'heure, l'outil marque « sans réponse » ; c'est une information pour lui, l'outil ne retire personne tout seul.</li>
+  <li><b>Déverrouillage, si besoin.</b> Tant qu'un créneau est à venir, on peut rouvrir : les groupes et les noms de salle sont conservés en coulisses et reviennent au prochain verrouillage.</li>
+  <li><b>Expiration.</b> Sept jours après le dernier créneau, tout est effacé, inscriptions comprises ; deux jours plus tard, les sauvegardes aussi <a class="mark" href="#r-purge">à relire</a>. L'organisateur duplique l'événement avant l'échéance s'il veut rejouer avec la même équipe.</li>
+</ol>
+
+<h2 id="securite">Ce qui protège le NAS et les joueurs</h2>
+<p>Tu as dit ne pas être spécialiste de sécurité, alors chaque mesure est expliquée avec ce qu'elle empêche.</p>
+
+<h3>Le conteneur</h3>
+<div class="tablewrap"><table>
+  <thead><tr><th>Mesure</th><th>Ce qu'elle empêche</th></tr></thead>
+  <tbody>
+    <tr><td>Le conteneur tourne sous un utilisateur sans droits, son disque est en lecture seule, il n'a aucun des privilèges système que Docker peut accorder, et son image ne contient que le programme : ni shell, ni outil, ni certificat.</td><td class="why">Si une faille du programme était exploitée, l'attaquant n'aurait rien sous la main pour aller plus loin, et ne pourrait écrire que dans le volume de données.</td></tr>
+    <tr><td>Jamais de mode privilégié, jamais d'accès au socket Docker (la porte par laquelle on commande Docker), jamais de dossier du NAS monté dedans. Un script vérifie ces règles à chaque déploiement et bloque si elles sont violées.</td><td class="why">Avec le socket Docker, un conteneur compromis contrôle toute la machine. C'est le montage qu'un autre service du NAS utilise aujourd'hui, et qu'on a choisi de ne pas reproduire.</td></tr>
+    <tr><td>Mémoire et processeur plafonnés ; redémarrage automatique ; journaux limités en taille, les plus anciens s'effacent.</td><td class="why">Un bug ou un afflux ne peut pas mettre le NAS à genoux ni remplir son disque, et une panne ne dure pas jusqu'au prochain déploiement.</td></tr>
+  </tbody>
+</table></div>
+
+<h3>Ce qui n'existe pas</h3>
+<div class="tablewrap"><table>
+  <thead><tr><th>Mesure</th><th>Ce qu'elle empêche</th></tr></thead>
+  <tbody>
+    <tr><td>Le programme ne fait aucune connexion sortante, et un test automatique échoue si une bibliothèque capable d'en faire entre dans le projet.</td><td class="why">Aucune donnée de joueur ne peut partir vers un tiers, et un attaquant n'a aucun canal pour faire sortir quoi que ce soit.</td></tr>
+    <tr><td>Le site n'embarque aucun script, police ni image venant d'un tiers, et le navigateur reçoit la consigne de refuser tout ce qui viendrait d'ailleurs.</td><td class="why">Aucun traceur, et un contenu injecté par une faille ne pourrait pas charger de code extérieur.</td></tr>
+    <tr><td>Le nom de domaine du site pointe vers le VPS, et rien d'autre dans ce domaine ne mène chez toi.</td><td class="why">Un joueur en colère ne trouve pas l'adresse IP de ta box en une requête DNS, et ne peut pas la saturer.</td></tr>
+  </tbody>
+</table></div>
+
+<h3>Les visiteurs et l'abus</h3>
+<div class="tablewrap"><table>
+  <thead><tr><th>Mesure</th><th>Ce qu'elle empêche</th></tr></thead>
+  <tbody>
+    <tr><td>La limitation de débit est dans le programme : par adresse IP du visiteur, par type d'action, avec un disjoncteur global que tu peux aussi déclencher à la main.</td><td class="why">Un vandale ne peut pas noyer la liste sous de faux raids pendant que tu dors. Au pire, la création s'arrête une heure. (Le faire dans Caddy obligerait à recompiler celui du VPS avec un module sans version stable.)</td></tr>
+    <tr><td>L'adresse IP du visiteur vient uniquement d'un en-tête que le VPS ajoute lui-même à chaque requête, en écrasant toute valeur venue de l'extérieur. Si l'en-tête manque, la requête est refusée plutôt que de se rabattre sur l'adresse du VPS.</td><td class="why">Un visiteur ne peut pas se faire passer pour un autre, et une erreur de configuration ne met pas tout le site derrière une seule adresse.</td></tr>
+    <tr><td>Aucune adresse IP de visiteur n'est écrite dans le fichier de données ni dans les journaux, ni sur le VPS ni sur le NAS. Le compteur de débit vit en mémoire et s'oublie au redémarrage.</td><td class="why">La règle « adresses IP gardées 24 h au plus » est tenue de fait. Une question juridique reste ouverte, voir <a href="#r-juridique">la question ouverte</a>.</td></tr>
+    <tr><td>Les champs saisis sont limités : pseudo limité aux caractères que le jeu accepte, note courte sans adresse web, points de combat plafonnés, lien Discord accepté seulement vers les domaines de Discord. Un champ piège invisible et un délai minimal avant envoi filtrent les robots simples.</td><td class="why">Pas de lien piégé posé par un inconnu, pas de formulaire rempli en rafale par un script.</td></tr>
+  </tbody>
+</table></div>
+
+<h3>Le déploiement</h3>
+<div class="tablewrap"><table>
+  <thead><tr><th>Mesure</th><th>Ce qu'elle empêche</th></tr></thead>
+  <tbody>
+    <tr><td>Les secrets (clé d'administration, clé qui signe les formulaires contre les robots, adresse web publique du site) vivent dans un fichier <code>.env</code> sur le NAS, jamais dans le dépôt, qui est public. Le déploiement refuse de démarrer s'il en manque un.</td><td class="why">Rien d'exploitable sur GitHub, et pas de service lancé à moitié configuré.</td></tr>
+    <tr><td>Le déploiement ne se déclenche que par un push sur la branche principale, jamais par une pull request ni un fork (une modification proposée, ou une copie du dépôt, par quelqu'un d'autre), et le runner n'accepte que ce dépôt.</td><td class="why">Personne ne peut faire exécuter du code sur ton NAS en ouvrant une pull request sur un dépôt public.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="exploitation">Mettre en ligne et exploiter</h2>
+<h3>Un push, et c'est en ligne</h3>
+<p>Un push sur la branche principale lance d'abord les tests sur les machines de GitHub : mise en forme du code, analyse du code, tests du programme et de l'interface, validation des fichiers de référence, vérification des règles de durcissement du conteneur, recherche de failles connues dans les bibliothèques utilisées, et contrôle du poids de l'interface. Si tout est vert, le runner installé sur le NAS met à jour sa copie du dépôt, reconstruit le conteneur, copie les fichiers de référence dans le volume, puis vérifie que le programme répond. Si la vérification échoue, le déploiement est marqué rouge et tu le vois sur GitHub. Le runner tourne sous un utilisateur du NAS qui a le droit de commander Docker, comme pour tes autres services <a class="mark" href="#r-runner">à relire</a>.</p>
+<h3>Trois gestes à connaître</h3>
+<ul>
+  <li><b>Ajouter un serveur de jeu :</b> éditer le fichier de référence, pousser. Pas de reconstruction.</li>
+  <li><b>Revenir en arrière :</b> annuler le commit fautif et pousser. Exception : un commit qui change la structure du fichier de données ne s'annule pas, on le corrige par un nouveau commit ; le runner fait une sauvegarde du fichier de données avant tout déploiement de ce genre.</li>
+  <li><b>Restaurer une sauvegarde :</b> arrêter le conteneur, remettre la sauvegarde à la place du fichier de données, supprimer les deux fichiers de travail que SQLite garde à côté (même nom, terminés par <code>-wal</code> et <code>-shm</code>), redémarrer. Tout est dans le volume.</li>
+</ul>
+<h3>Ce que tu verras au quotidien</h3>
+<p>Rien, si tout va bien. Les journaux du conteneur ne contiennent ni secret, ni adresse IP de joueur, ni pseudo. Un événement y est désigné par son identifiant public.</p>
+
+<h2 id="relire">Ce que tu dois relire</h2>
+<h3>Une question ouverte</h3>
+<div class="review" id="r-juridique"><b>La loi impose-t-elle de garder les adresses IP ?</b><span class="tag">juridique</span><p class="if">Un site public hébergé chez un particulier, où des visiteurs écrivent, doit peut-être, par la loi, conserver l'adresse IP de ceux qui y écrivent. Cela contredirait « aucune adresse IP gardée ». Je n'ai pas tranché : c'est une question pour quelqu'un de compétent en droit, et si cette conservation s'impose, on ajoutera un journal d'adresses IP limité dans le temps, sans toucher au reste.</p></div>
+<h3>Dix choix faits sans toi</h3>
+<p>Pour chacun, ce qui change si tu dis non. Les plus lourds de conséquence d'abord.</p>
+<div class="review" id="r-role"><b>Le rôle vient de la classe, le joueur ne le choisit pas</b><span class="tag">produit</span><p class="if">C'est ce que le forge a verrouillé. Deux relecteurs ont relevé que le jeu et ton intent dump parlent de rôle choisi (« Clerc en DPS »). Rouvrir ce point change le formulaire, les minimums et maximums par classe, et la composition automatique ; c'est ta décision, pas la mienne.</p></div>
+<div class="review" id="r-public"><b>La page publique ne montre pas la liste des inscrits</b><span class="tag">produit</span><p class="if">Seulement le nombre d'inscrits par classe et par rôle, pour ne pas exposer les pseudos à n'importe qui. Si tu veux la liste visible, c'est une ligne à changer, et une décision sur les données exposées.</p></div>
+<div class="review" id="r-secret"><b>Le lien reste dans la barre d'adresse</b><span class="tag">produit</span><p class="if">Copier le lien suffit pour changer d'appareil. Sur un PC partagé, l'historique du navigateur le garde. L'alternative : effacer le lien de la barre d'adresse une fois mémorisé, et offrir un bouton « copier mon lien ».</p></div>
+<div class="review" id="r-verrou"><b>Le verrouillage porte sur l'événement entier</b><span class="tag">produit</span><p class="if">Tous les groupes se verrouillent ensemble. Un verrouillage groupe par groupe reste possible plus tard sans changer la structure des données.</p></div>
+<div class="review" id="r-purge"><b>Effacement après sept jours, deux sauvegardes</b><span class="tag">données</span><p class="if">Une valeur que l'intent dump laissait vide. Plus long : plus de temps pour dupliquer, plus de données gardées. Plus court : l'inverse.</p></div>
+<div class="review" id="r-runner"><b>Le runner est un utilisateur qui commande Docker</b><span class="tag">sécurité</span><p class="if">C'est ton montage actuel, et il donne au runner tous les droits sur le NAS, l'équivalent de root. Tenable tant que tu es seul à pousser sur ce dépôt. Si des contributeurs externes arrivent, on passe à un droit sudo limité à quelques commandes, ou à Docker sans root.</p></div>
+<div class="review" id="r-shell"><b>Un conteneur sans shell</b><span class="tag">exploitation</span><p class="if">On ne peut pas entrer dans le conteneur pour regarder. Le diagnostic passe par les journaux et par la vérification de santé, celle que le runner lance après chaque déploiement. Si tu veux un shell, on part d'une image Alpine : elle contient plus d'outils, donc elle offre un peu plus de prise à un attaquant.</p></div>
+<div class="review" id="r-dix"><b>Les écrans se rafraîchissent toutes les dix secondes</b><span class="tag">technique</span><p class="if">L'écran redemande les données toutes les dix secondes, plutôt que de garder une connexion ouverte en permanence, ce qui demanderait des réglages dans les deux Caddy. La promesse de l'intent dump, « sa ligne apparaît aussitôt », veut donc dire : dans les dix secondes.</p></div>
+<div class="review" id="r-ts"><b>TypeScript 7, et pas d'ESLint pour l'instant</b><span class="tag">outillage</span><p class="if">Les outils de lint (la relecture automatique du code, qui signale les erreurs courantes) ne savent pas encore lire TypeScript 7. Si tu veux ESLint, on reste en TypeScript 6.0.3.</p></div>
+<div class="review" id="r-sqlx"><b>SQLx 0.8.6 plutôt que 0.9.0</b><span class="tag">bibliothèque</span><p class="if">SQLx est la bibliothèque qui lit et écrit le fichier SQLite. La 0.9.0 est sortie en mai et n'a reçu aucun correctif depuis, alors que des bugs touchant SQLite restent ouverts. Si tu préfères la 0.9, c'est deux lignes à changer, et le risque de tomber sur un de ces bugs.</p></div>
+
+<h2 id="plus-tard">Laissé pour plus tard</h2>
+<ul>
+  <li>L'algorithme exact de composition automatique : ce qu'il reçoit et ce qu'il rend est fixé, son contenu appartient à l'epic « composition ».</li>
+  <li>La preuve de travail anti-robots (un petit calcul imposé au navigateur avant chaque envoi de formulaire, invisible pour un humain, coûteux pour un robot) : prévue, derrière un interrupteur, activée seulement si tu dois nettoyer de faux raids trop souvent.</li>
+  <li>Un environnement de test séparé, les tests en navigateur réel, la mesure de performance automatisée, les mesures d'usage.</li>
+  <li>L'export et l'import d'un événement en fichier, l'installation sur l'écran d'accueil du téléphone, un domaine payant avec redirection.</li>
+  <li>Le texte des messages prêts à coller dans Discord et le dessin des écrans : c'est le travail de l'étape UX.</li>
+</ul>
+
+<h2 id="suite">Et maintenant</h2>
+<div class="next">
+  <p>La spine complète, avec ses décisions numérotées, est dans le dépôt : <code>_bmad-output/planning-artifacts/architecture/architecture-aion2-raid-planner-2026-11-05/</code>. Les revues qui l'ont corrigée sont dans son dossier <code>reviews/</code>.</p>
+  <p style="margin:0">Prochaine étape : <code>/bmad-ux</code> dans un chat neuf, pour dessiner les écrans, à commencer par la grille joueurs × créneaux et l'écran de composition sur téléphone, le plus gros risque identifié par le forge.</p>
+</div>
+
+</div></div>

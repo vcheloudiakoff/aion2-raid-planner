@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grille : deux vues</title>
+<style>
+/* Régi par EXPERIENCE.md « Grille joueurs × créneaux », Component Patterns (puce de créneau, cellule, couverture), Accessibility Floor ; DESIGN.md tokens -dark. Maquette statique, données fictives. */
+:root{--base:#121418;--raised:#1B1E24;--sunken:#0D0F12;--ink:#E9EBEF;--ink2:#A3A9B4;--off:#5D636D;--border:#2C313A;--accent:#E0B04A;--ok:#4CC38A;--pend:#7AAEEF;--danger:#EF7A70;--ely:#8CC2F0;--asmo:#C79BE6}
+*{box-sizing:border-box}body{margin:0;background:#08090b;color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:24px}
+h1{font-size:20px;margin:0 0 4px}.lead{color:var(--ink2);max-width:1150px;margin:0 0 24px;font-size:15px}
+.row{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}
+.col h2{font-size:16px;margin:0 0 4px}.col p{color:var(--ink2);font-size:14px;margin:0 0 12px;max-width:360px}
+.phone{width:360px;background:var(--base);border:1px solid var(--border);border-radius:24px;overflow:hidden}
+.bar{display:flex;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);font-size:14px}
+.title{padding:12px 16px 0}.title b{font-size:20px;display:block}.title span{color:var(--ink2);font-size:13px}
+.tabs{display:flex;gap:4px;padding:12px 16px 0;border-bottom:1px solid var(--border);font-size:14px;font-weight:600}
+.tabs div{padding:8px 6px;color:var(--ink2)}.tabs .on{color:var(--ink);border-bottom:2px solid var(--accent)}
+.pad{padding:12px 16px}
+.seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:14px;font-weight:600;margin-bottom:12px}
+.seg div{flex:1;text-align:center;padding:10px 0;color:var(--ink2)}.seg .on{background:var(--raised);color:var(--ink);box-shadow:inset 0 -2px var(--accent)}
+.seg .dis{color:var(--off)}
+.filters{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.pill{border:1px solid var(--border);border-radius:9999px;padding:6px 12px;font-size:14px;font-weight:600;min-height:36px;display:flex;align-items:center;gap:6px}
+.pill.on{border:2px solid var(--accent)}.pill .n{color:var(--ink2);font-variant-numeric:tabular-nums;font-weight:400}
+table{border-collapse:separate;border-spacing:4px 4px;margin:0 -4px}
+th{font-size:13px;font-weight:600;line-height:1.2;color:var(--ink2);text-align:center;width:44px}
+th.sel{color:var(--accent)}th.p{width:136px;text-align:left}
+td.p{width:136px;font-size:14px;line-height:1.25}td.p b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:136px}
+td.p small{color:var(--ink2);font-size:12px;font-variant-numeric:tabular-nums}
+.c{width:44px;height:44px;border-radius:4px;text-align:center;vertical-align:middle;font-weight:700;position:relative}
+.y{background:var(--ok);color:#0d0f12}.n0{background:var(--sunken);color:var(--off)}
+.star:after{content:"☆";position:absolute;top:1px;right:3px;font-size:10px;line-height:1}
+.selcol{outline:2px solid var(--accent);outline-offset:-2px}
+tfoot td{text-align:center;font-size:13px;color:var(--ink2);font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}.e{background:var(--ely)}.a{background:var(--asmo)}
+.badge{font-size:11px;border:1px solid var(--pend);color:var(--pend);border-radius:9999px;padding:0 6px;margin-left:4px;font-weight:600}
+.cov{background:var(--raised);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:12px;font-size:14px}
+.cov h3{font-size:14px;margin:0 0 6px}.cov div{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums}
+.cov .bad{color:var(--danger)}
+.list .it{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);min-height:52px;font-size:14px}
+.list .it b{font-size:15px}.list .it small{color:var(--ink2);font-size:13px;display:block}.list .cp{font-variant-numeric:tabular-nums;color:var(--ink2)}
+.fold{color:var(--ink2);font-size:14px;padding:12px 0;font-weight:600}
+.cta{margin:12px 16px 16px;background:var(--accent);color:#121418;border-radius:8px;min-height:44px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
+.note{margin-top:28px;max-width:1150px;color:var(--ink2);font-size:14px;border-top:1px solid var(--border);padding-top:12px}
+.note b{color:var(--ink)}
+</style></head><body>
+<h1>Grille joueurs × créneaux : deux vues à 360 px</h1>
+<p class="lead">Même raid fictif vu par Kael, l'organisateur, dans l'onglet Disponibilités. À gauche, la <b>matrice</b> : tout le monde d'un coup d'œil, mais seulement jusqu'à 4 créneaux. À droite, la vue <b>par créneau</b> : on choisit un créneau en haut et on voit qui est dispo, ça marche quel que soit le nombre de créneaux. La question : afficher le sélecteur « Matrice · Par créneau » quand les deux sont possibles, ou imposer une seule vue.</p>
+<div class="row">
+
+<div class="col"><h2>A. Matrice (3 créneaux)</h2><p>Colonne jeudi sélectionnée : la couverture par classe de jeudi s'affiche dessous.</p>
+<div class="phone">
+ <div class="bar"><span>Raid planner</span><span>FR · ◐</span></div>
+ <div class="title"><b>Ludra · 3 créneaux</b><span>Heures en Europe/Paris</span></div>
+ <div class="tabs"><div>Candidatures</div><div class="on">Disponibilités</div><div>Réglages</div></div>
+ <div class="pad">
+  <div class="seg"><div class="on">Matrice</div><div>Par créneau</div></div>
+  <div class="filters"><div class="pill on">Tous <span class="n">9</span></div><div class="pill">Acceptés <span class="n">7</span></div><div class="pill">En attente <span class="n">2</span></div></div>
+  <table>
+   <thead><tr><th class="p">Joueur</th><th>mer.<br>21:00</th><th class="sel">jeu.<br>21:00</th><th>sam.<br>21:00</th></tr></thead>
+   <tbody>
+    <tr><td class="p"><b><span class="dot e"></span>Kael</b><small>Templier · 3 120</small></td><td class="c y">✓</td><td class="c y star selcol">✓</td><td class="c n0">–</td></tr>
+    <tr><td class="p"><b><span class="dot a"></span>Nyra</b><small>Clerc · 2 980</small></td><td class="c n0">–</td><td class="c y star selcol">✓</td><td class="c y star">✓</td></tr>
+    <tr><td class="p"><b><span class="dot e"></span>Lysse</b><small>Aède · 2 870</small></td><td class="c y">✓</td><td class="c y selcol">✓</td><td class="c y">✓</td></tr>
+    <tr><td class="p"><b><span class="dot a"></span>Orvan</b><small>Gladiateur · 3 300</small></td><td class="c n0">–</td><td class="c y selcol">✓</td><td class="c y star">✓</td></tr>
+    <tr><td class="p"><b><span class="dot e"></span>Mirae</b><small>Sorcier · 3 050</small></td><td class="c y star">✓</td><td class="c n0 selcol">–</td><td class="c y">✓</td></tr>
+    <tr><td class="p"><b><span class="dot a"></span>Daskelvarion</b><small>Rôdeur · 2 760</small></td><td class="c n0">–</td><td class="c y selcol">✓</td><td class="c n0">–</td></tr>
+    <tr><td class="p"><b><span class="dot e"></span>Toma</b><small>Aède · 2 640</small></td><td class="c y">✓</td><td class="c y selcol">✓</td><td class="c y">✓</td></tr>
+    <tr><td class="p"><b><span class="dot a"></span>Faelin<span class="badge">attente</span></b><small>Assassin · 3 010</small></td><td class="c n0">–</td><td class="c y selcol">✓</td><td class="c y">✓</td></tr>
+    <tr><td class="p"><b><span class="dot e"></span>Senna<span class="badge">attente</span></b><small>Clerc · 2 590</small></td><td class="c y">✓</td><td class="c n0 selcol">–</td><td class="c n0">–</td></tr>
+   </tbody>
+   <tfoot><tr><td></td><td>4</td><td style="color:var(--accent)">7</td><td>5</td></tr></tfoot>
+  </table>
+  <div class="cov"><h3>jeu. 21:00 · 7 dispo parmi les acceptés</h3>
+   <div><span>Templier</span><span>1 / min 1</span></div>
+   <div class="bad"><span>Clerc</span><span>1 / min 2</span></div>
+   <div><span>Aède</span><span>2 / max 2</span></div>
+  </div>
+ </div>
+ <div class="cta">Verrouiller</div>
+</div></div>
+
+<div class="col"><h2>B. Par créneau (6 créneaux)</h2><p>Trop de créneaux pour la matrice : les puces passent à la ligne, jamais de défilement de côté. Le sélecteur grisé indique pourquoi.</p>
+<div class="phone">
+ <div class="bar"><span>Raid planner</span><span>FR · ◐</span></div>
+ <div class="title"><b>Ludra · 6 créneaux</b><span>Heures en Europe/Paris</span></div>
+ <div class="tabs"><div>Candidatures</div><div class="on">Disponibilités</div><div>Réglages</div></div>
+ <div class="pad">
+  <div class="seg"><div class="dis">Matrice (≤ 4 créneaux)</div><div class="on">Par créneau</div></div>
+  <div class="filters">
+   <div class="pill">mar. 21:00 <span class="n">4</span></div><div class="pill">mer. 21:00 <span class="n">6</span></div>
+   <div class="pill on">jeu. 21:00 <span class="n">11</span></div><div class="pill">ven. 22:00 <span class="n">3</span></div>
+   <div class="pill">sam. 15:00 <span class="n">8</span></div><div class="pill">sam. 21:00 <span class="n">10</span></div>
+  </div>
+  <div class="cov" style="margin-top:0"><h3>jeu. 21:00 · 11 dispo parmi les acceptés</h3>
+   <div><span>Templier</span><span>2 / min 1</span></div>
+   <div class="bad"><span>Clerc</span><span>1 / min 2</span></div>
+   <div><span>Aède</span><span>2 / max 2</span></div>
+  </div>
+  <div class="list">
+   <div class="it"><div><b><span class="dot e"></span>Kael ☆</b><small>[SIE] · Templier</small></div><span class="cp">3 120</span></div>
+   <div class="it"><div><b><span class="dot a"></span>Orvan</b><small>[ISR] · Gladiateur</small></div><span class="cp">3 300</span></div>
+   <div class="it"><div><b><span class="dot a"></span>Nyra ☆</b><small>[ISR] · Clerc</small></div><span class="cp">2 980</span></div>
+   <div class="it"><div><b><span class="dot e"></span>Lysse</b><small>[NEZ] · Aède</small></div><span class="cp">2 870</span></div>
+   <div class="it"><div><b><span class="dot e"></span>Toma</b><small>[SIE] · Aède</small></div><span class="cp">2 640</span></div>
+   <div class="fold">+ 6 autres dispo</div>
+   <div class="fold">▸ Pas dispo (5)</div>
+  </div>
+ </div>
+ <div class="cta">Verrouiller</div>
+</div></div>
+</div>
+
+<div class="note"><b>Les options pour le sélecteur :</b>
+<b>1.</b> Sélecteur visible quand les deux vues sont possibles (comme A et B) : la matrice par défaut si ≤ 4 créneaux, et tu bascules si tu veux.
+<b>2.</b> Pas de sélecteur : matrice automatique si ≤ 4 créneaux, sinon par créneau. Un contrôle de moins, mais tu ne choisis pas.
+<b>3.</b> Une seule vue, toujours par créneau : la plus simple à coder et à tester, mais on perd la vue d'ensemble d'un coup d'œil.
+<br>Pseudos et serveurs fictifs. ☆ = créneau préféré (plusieurs possibles). Le point de couleur = la faction.</div>
+</body></html>
