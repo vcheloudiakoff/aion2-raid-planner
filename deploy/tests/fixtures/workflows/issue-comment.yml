@@ -1,0 +1,2 @@
+# Fixture : déclencheur issue_comment refusé.
+on: [push, issue_comment]

@@ -1,0 +1,71 @@
+# Production sur le NAS (AD-8). Lancer depuis la racine du dépôt :
+#   docker compose -f deploy/docker-compose.yml up -d --build
+# `.env` (non versionné) vit à côté de ce fichier ; modèle : `.env.example`.
+# Toute ligne de durcissement dit ce qu'elle empêche ; `deploy/check-hardening.sh` la vérifie en CI.
+
+name: aion2-raid-planner
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        APP_BUILD: ${APP_BUILD:-dev}
+    image: aion2-raid-planner:local
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set in deploy/.env}
+      FORM_TOKEN_SECRET: ${FORM_TOKEN_SECRET:?FORM_TOKEN_SECRET must be set in deploy/.env}
+    # Empêche le processus de tourner en root, dans le conteneur comme sur le NAS.
+    user: "10001:10001"
+    # Empêche toute écriture hors du volume /data et du tmpfs /tmp (binaire et image intouchables).
+    read_only: true
+    # Empêche toute capacité noyau (réseau brut, chown, montage...) ; le serveur n'en a besoin d'aucune.
+    cap_drop:
+      - ALL
+    security_opt:
+      # Empêche de regagner des privilèges par setuid ou fichier à capacités.
+      - no-new-privileges:true
+    # Empêche l'exécution d'un fichier déposé dans /tmp et les périphériques ou setuid qui y seraient créés.
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev
+    # Empêche une bombe à processus de saturer le NAS.
+    pids_limit: 128
+    # Empêche une fuite mémoire de faire tomber les autres services du NAS.
+    mem_limit: 256m
+    # Empêche le service de monopoliser plus d'un cœur.
+    cpus: 1.0
+    # Empêche un service à terre jusqu'au prochain push (sauf arrêt volontaire).
+    restart: unless-stopped
+    # Empêche des journaux sans borne sur le disque du NAS (3 fichiers de 10 Mo au plus).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Empêche toute exposition hors de la boucle locale : seul le Caddy de l'hôte y accède.
+    ports:
+      - "127.0.0.1:${PORT:-8080}:8080"
+    # Empêche le partage du réseau d'un autre service : bridge dédié.
+    networks:
+      - app
+    # Empêche tout montage de répertoire du NAS : un seul volume nommé, en /data.
+    volumes:
+      - data:/data
+    healthcheck:
+      test: ["CMD", "/server", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  data:

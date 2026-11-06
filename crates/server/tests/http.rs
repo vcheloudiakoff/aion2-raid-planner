@@ -192,7 +192,14 @@ async fn embedded_web_dist() {
     let router = server::http::router(memory_state("embedded_dist").await);
     let (res, body) = send(&router, Method::GET, "/").await;
     assert_security_headers(&res);
-    if server::http::assets::WebDist::get("index.html").is_some() {
+    // En CI, après `vite build`, le repli 404 masquerait un `outDir` cassé : il est interdit.
+    let required = std::env::var("REQUIRE_WEB_DIST").is_ok_and(|v| v == "1");
+    let built = server::http::assets::WebDist::get("index.html").is_some();
+    assert!(
+        built || !required,
+        "REQUIRE_WEB_DIST=1 but web/dist/index.html is not embedded"
+    );
+    if built {
         assert_eq!(res.status(), StatusCode::OK);
         assert!(body.contains("<div id=\"root\">"));
         assert_eq!(header(&res, "cache-control"), "no-cache");

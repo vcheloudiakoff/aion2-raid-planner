@@ -1,0 +1,5 @@
+# Fixture : déclencheur workflow_run refusé.
+on:
+  workflow_run:
+    workflows: [deploy]
+    types: [completed]

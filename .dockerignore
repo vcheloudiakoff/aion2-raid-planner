@@ -1,0 +1,17 @@
+# Contexte de build = racine du dépôt (deploy/Dockerfile). Le binaire n'a besoin que des sources Rust,
+# de reference/ (include_str!) et de web/ ; tout le reste reste dehors, secrets en premier.
+.env
+.env.*
+**/.env
+**/.env.*
+target/
+node_modules/
+**/node_modules/
+.git/
+web/dist/
+_bmad/
+_bmad-output/
+docs/
+.claude/
+.github/
+deploy/

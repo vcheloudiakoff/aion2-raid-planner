@@ -1,0 +1,30 @@
+# Fixture : ipc host.
+services:
+  server:
+    image: fixture:local
+    ipc: host
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1.0
+    restart: unless-stopped
+    logging:
+      driver: json-file
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - app
+    volumes:
+      - data:/data
+networks:
+  app:
+    driver: bridge
+volumes:
+  data:

@@ -1,0 +1,171 @@
+# CI puis (story 1-4) déploiement sur le NAS (AD-10).
+# Déclencheurs limités à push sur main et lancement manuel : aucun workflow de pull request ni de fork
+# n'atteindra le futur runner du NAS (check-hardening.sh le refuse).
+# Actions épinglées par SHA complet, version en commentaire ; Dependabot les fait monter.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_DENY_VERSION: "0.20.2"
+  CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # --- Web : tsc, vitest, audit, build et budget (AD-19) ---------------------------------
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm ci
+        working-directory: web
+        run: npm ci --no-fund
+
+      - name: tsc --noEmit
+        working-directory: web
+        run: npm run typecheck
+
+      - name: vitest
+        working-directory: web
+        run: npm test
+
+      - name: npm audit
+        working-directory: web
+        run: npm audit --audit-level=high
+
+      - name: vite build
+        working-directory: web
+        run: npx vite build
+
+      - name: Budget du bundle
+        working-directory: web
+        run: node scripts/check-budget.mjs
+
+      # --- Rust : fmt, clippy, tests, chaîne de dépendances (AD-17), avis de sécurité ----------
+
+      - name: Toolchain Rust (rust-toolchain.toml)
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal --component rustfmt --component clippy
+          cargo --version
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: cargo test (web/dist exigé)
+        env:
+          REQUIRE_WEB_DIST: "1"
+        run: cargo test --locked
+
+      - name: Aucune crate client réseau (AD-17)
+        run: |
+          cargo tree -e features --workspace --target all --locked > "$RUNNER_TEMP/tree.txt"
+          sh deploy/check-network-crates.sh < "$RUNNER_TEMP/tree.txt"
+
+      - name: cargo deny check advisories
+        run: |
+          archive="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl -fsSL -o "$RUNNER_TEMP/$archive.tar.gz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/$archive.tar.gz"
+          echo "${CARGO_DENY_SHA256}  $RUNNER_TEMP/$archive.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/$archive/cargo-deny" check advisories
+
+      - name: validate-reference
+        run: cargo run --locked -q -p server -- validate-reference reference
+
+      # --- Durcissement du conteneur et fuites du dépôt public (AD-8, AD-10) -------------------
+
+      - name: check-hardening
+        run: sh deploy/check-hardening.sh
+
+      - name: check-hardening (tests)
+        run: sh deploy/tests/check-hardening.test.sh
+
+      # --- Fumée : image construite, conteneur healthy, non-root, référence servie --------------
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/Dockerfile
+          build-args: APP_BUILD=${{ github.sha }}
+          tags: aion2-raid-planner:local
+          load: true
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Conteneur de fumée
+        run: |
+          umask 077
+          {
+            echo "PUBLIC_BASE_URL=https://raid.example.org"
+            echo "FORM_TOKEN_SECRET=$(head -c 48 /dev/urandom | base64 | tr -d '\n')"
+          } > "$RUNNER_TEMP/smoke.env"
+          compose="docker compose -f deploy/docker-compose.yml --env-file $RUNNER_TEMP/smoke.env"
+          $compose up -d --no-build --wait --wait-timeout 120
+          cid=$($compose ps -q server)
+          inspect() { docker inspect --format "$1" "$cid"; }
+          # Ce que Docker a réellement appliqué, pas seulement ce que dit le compose.
+          test "$(inspect '{{.State.Health.Status}}')" = healthy
+          test "$(inspect '{{.Config.User}}')" = "10001:10001"
+          test "$(inspect '{{.HostConfig.ReadonlyRootfs}}')" = true
+          test "$(inspect '{{json .HostConfig.CapDrop}}')" = '["ALL"]'
+          inspect '{{json .HostConfig.SecurityOpt}}' | grep -q 'no-new-privileges'
+          test "$(inspect '{{.HostConfig.PidsLimit}}')" = 128
+          test "$(inspect '{{.HostConfig.Memory}}')" -gt 0
+          host_ips=$(inspect '{{range $p, $b := .HostConfig.PortBindings}}{{range $b}}{{.HostIp}} {{end}}{{end}}')
+          echo "port bindings: $host_ips"
+          test -n "$host_ips"
+          for ip in $host_ips; do test "$ip" = 127.0.0.1; done
+          # Au moins un processus, tous en 10001:10001.
+          docker top "$cid" -o pid,uid,gid | awk 'NR > 1 { n++; if ($2 != 10001 || $3 != 10001) bad = 1 } END { exit (bad || n == 0) }'
+          status=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/reference)
+          echo "GET /api/reference: $status"
+          test "$status" = 200
+
+      - name: Journaux du conteneur
+        if: failure()
+        run: |
+          [ -f "$RUNNER_TEMP/smoke.env" ] || exit 0
+          docker compose -f deploy/docker-compose.yml --env-file "$RUNNER_TEMP/smoke.env" logs --no-color
+
+      - name: Arrêt du conteneur
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/smoke.env" ] || exit 0
+          docker compose -f deploy/docker-compose.yml --env-file "$RUNNER_TEMP/smoke.env" down -v

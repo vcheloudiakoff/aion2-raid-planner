@@ -12,3 +12,12 @@
 - source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-2-reference-du-jeu-en-toml-rechargee-a-chaud.md`
   summary: Tester le câblage de `run()` (même `ReferenceStore` pour `AppState` et la tâche, poll initial, tâche lancée), par extraction d'un `run_with(dir, db, listener)` ou par un smoke test du conteneur.
   evidence: aucun test n'exécute `serve` ; passer un `ReferenceStore::new()` neuf à `AppState` laisserait la production en 503 sans casser la suite.
+- source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-3-conteneur-durci-et-ci-complete.md`
+  summary: Élargir le balayage des fuites de `check-hardening.sh` (IPv6, TLD hors liste comme `.ovh`, et dossiers hors `deploy/` et `.github/workflows/`).
+  evidence: `fd00::` et un hôte en `.ovh` passent (reproduit) ; le périmètre actuel est celui d'AD-10, le reste du dépôt public n'est protégé que par le grep manuel avant commit.
+- source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-3-conteneur-durci-et-ci-complete.md`
+  summary: Décider comment vérifier les PR Dependabot (workflow de CI sur PR hébergé par GitHub, sans secret ni runner du NAS, ou relecture manuelle).
+  evidence: `deploy.yml` ne tourne que sur `push` et `workflow_dispatch` ; un bump n'est testé qu'après fusion sur `main` (le futur `deploy` reste derrière `needs: ci`).
+- source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-3-conteneur-durci-et-ci-complete.md`
+  summary: En 1-4, consigner et vérifier les versions minimales du NAS (Compose ≥ 2.24 pour `env_file.required`, Engine ≥ 25 pour `healthcheck.start_interval`) et poser la garde côté runner contre les workflows de fork (approbation obligatoire, runner limité au dépôt).
+  evidence: un workflow ajouté par une PR de fork s'exécute avant que `check-hardening.sh` ne le voie ; AD-10 prévoit déjà l'approbation des contributeurs externes.
