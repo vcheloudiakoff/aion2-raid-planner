@@ -1,0 +1,49 @@
+- id: "5-1"
+  title: Re-confirmation par lien
+  description: >-
+    Migration des confirmations, commandes `request_confirmation` et `answer_confirmation`,
+    `domain::confirmation_state`, carte de confirmation sur `/p`, feuille « Demander confirmation » dans
+    Salle (SPEC CAP-1).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    L'état n'est jamais stocké ni modifié par la tâche périodique ; tests de propriétés sur
+    `confirmation_state` avec `Clock` injectée.
+- id: "5-2"
+  title: Le banc remplace un absent
+  description: >-
+    États de confirmation visibles sur titulaires et remplaçants dans Salle et Composition, remplacement
+    banc → slot en quatre touchers au plus, vue du remplaçant promu sur `/p` (SPEC CAP-2).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Aucune action automatique sur `expired` ; aucun compteur ni historique d'absence (verrou Vitrine).
+- id: "5-3"
+  title: Liste publique filtrable
+  description: >-
+    Requête `list_public_events` et `PublicEventSummary`, liste de l'accueil avec filtres en puces
+    (instance, rôle manquant, faction, jour), tri par prochain créneau, état vide (SPEC CAP-3).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Prédicats de visibilité calculés à la lecture (AD-14), jamais stockés ; vérifier le temps de réponse
+    avec 500 événements en base.
+- id: "5-4"
+  title: Administration
+  description: >-
+    Routes `/api/admin/*` sous `ADMIN_SECRET`, écran minimal `/a/<secret>` : lister, retirer de la
+    liste, supprimer, couper ou rétablir la création, interrupteur persisté (SPEC CAP-4).
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Expliquer à Vincent dans le récapitulatif comment générer et garder `ADMIN_SECRET` dans le `.env`
+    du NAS. Comparaison en temps constant ; jamais journalisé.
+- id: "5-5"
+  title: Purge automatique et fin de la v1
+  description: >-
+    Tâche de purge horaire en cascade à `PURGE_AFTER_DAYS`, cohérence avec la rotation des sauvegardes,
+    lien purgé = message unique ; vérification du signal de succès de l'epic en production (SPEC CAP-5).
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Ajouter `PURGE_AFTER_DAYS` à `deploy/.env.example` si absent.

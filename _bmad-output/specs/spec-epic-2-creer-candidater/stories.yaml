@@ -1,0 +1,58 @@
+- id: "2-1"
+  title: Créer un événement et recevoir ses liens
+  description: >-
+    Entités et migration de l'événement (créneaux, bornes par classe), commande `create_event`, écran
+    `/new` sur un seul écran et écran Liens créés avec ses trois puces (SPEC CAP-1, CAP-7 pour ces écrans).
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    La migration est forward-only et immuable une fois poussée (AD-2) : y créer aussi les tables
+    `candidatures` et `availabilities` (avec la préférence booléenne par disponibilité) pour éviter une
+    migration de compensation en 2-2. Ne pas créer `groups`, `assignments` ni `confirmations` (epics 3, 5).
+- id: "2-2"
+  title: Page publique et candidature
+  description: >-
+    Requête `public_event`, pages `/e/<id>` et `/j/<secret>`, commande `submit_candidature` avec
+    préférences multiples, écran de candidature sur un seul écran et redirection vers le lien personnel
+    (SPEC CAP-2, CAP-3).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Comptes par classe, par rôle et rôles manquants calculés côté serveur. Aucune liste nominative dans
+    `PublicEvent` : ajouter un test qui le vérifie.
+- id: "2-3"
+  title: Ma candidature
+  description: >-
+    Requête `participant_view`, page `/p/<secret>` avec lien personnel, statut, modification en `open` et
+    retrait, lien Discord si `accepted`, état annulé (SPEC CAP-4).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: ""
+- id: "2-4"
+  title: "Organisateur : trier les candidatures"
+  description: >-
+    Requête `organizer_view`, page `/o/<secret>` avec barre d'onglets et onglet Candidatures : accepter,
+    refuser, copier `Pseudo[SRV]`, badge doublon, rafraîchissement 10 s (SPEC CAP-5, partie tri).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    La barre d'onglets n'a ici que Candidatures et Réglages ; Disponibilités arrive en epic 3. Transitions
+    de statut exactement celles d'AD-4.
+- id: "2-5"
+  title: "Organisateur : réglages et annulation"
+  description: >-
+    Onglet Réglages : note, Discord, visibilité, CP min, bornes par classe, ajout et suppression de
+    créneaux en `open`, champs immuables après la première candidature, annulation (SPEC CAP-5, partie
+    réglages).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: ""
+- id: "2-6"
+  title: Sur cet appareil, dupliquer et fin d'epic
+  description: >-
+    Section « Sur cet appareil » de l'accueil, « Oublier », « Dupliquer » qui préremplit `/new`,
+    « Copier mon lien », retrait de l'entrée locale sur lien invalide ; vérification du signal de succès
+    en production (SPEC CAP-6, success signal).
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: ""

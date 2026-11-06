@@ -1,0 +1,51 @@
+- id: "3-1"
+  title: Grille des disponibilités
+  description: >-
+    Onglet Disponibilités de `/o` : matrice ou vue par créneau selon la règle de largeur, tri et filtres,
+    pied de colonne, couverture par classe du créneau sélectionné, accessibilité de la table (SPEC CAP-1).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Concevoir à 360 px d'abord ; la maquette `mockups/key-grille.html` illustre, EXPERIENCE fait foi.
+    Couverture et comptes calculés côté serveur dans `OrganizerEvent`.
+- id: "3-2"
+  title: Verrouiller et déverrouiller
+  description: >-
+    Migration des groupes et des placements, commandes `lock_event` et `unlock_event`, nom de salle
+    (AD-18, `ROOM_NAME_TEMPLATE`), feuille Verrouiller, onglets Composition et Salle qui apparaissent en
+    `locked` (SPEC CAP-2).
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    La migration crée `groups` et `assignments` avec les trois index uniques d'AD-4 ; pas
+    `confirmations` (epic 5). Ajouter `ROOM_NAME_TEMPLATE` à `deploy/.env.example`.
+- id: "3-3"
+  title: Placement à la main
+  description: >-
+    Commande `apply_placement` et sa validation, avertissements calculés, onglet Composition chargé à la
+    demande avec brouillon local, réserve, Retirer / Au banc / Échanger, bandeau de données changées
+    (SPEC CAP-3).
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Règle décidée en UX : hors disponibilité et hors bornes de classe = permis avec avertissement, jamais
+    400 ; seules les violations structurelles de `placement-et-salle.md` sont refusées. Pas de bouton
+    « Composer automatiquement » (epic 4), mais garder la barre d'action prête à l'accueillir.
+- id: "3-4"
+  title: Salle et message Discord
+  description: >-
+    Onglet Salle : carte par groupe, nom de salle à copier, recette en trois lignes, slots et banc,
+    « Régénérer le nom » ; « Copier le message Discord » depuis le gabarit des locales (SPEC CAP-4, CAP-5).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: ""
+- id: "3-5"
+  title: Placement côté participant et vrai raid
+  description: >-
+    `ParticipantView` enrichi (placement, créneau, nom de salle) et état « revenu en préparation » sur
+    `/p` ; fin d'epic : Vincent monte un vrai raid de bout en bout sans solveur (SPEC CAP-6, success signal).
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Le raid réel est joué par Vincent : la story se termine par une liste de vérification à lui remettre,
+    pas par une affirmation de l'agent.

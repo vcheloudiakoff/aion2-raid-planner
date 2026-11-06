@@ -1,0 +1,30 @@
+- id: "4-1"
+  title: Noyau du solveur et contraintes dures
+  description: >-
+    `domain::compose` construit des groupes complets par construction gloutonne en respectant les quatre
+    contraintes dures et la disposition des équipes ; tests de propriétés de déterminisme et de validité
+    (SPEC CAP-1, `solveur.md`).
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Aucune dépendance nouvelle dans `crates/domain` ; la sortie doit passer la validation
+    d'`apply_placement` de l'epic 3 (test croisé).
+- id: "4-2"
+  title: Objectifs, banc et budget
+  description: >-
+    Objectif lexicographique (équilibre ou plus fort d'abord, préférences, remplissage), recherche locale
+    bornée par itérations avec filet de temps, remplissage du banc, cas de test nommés (SPEC CAP-2, CAP-3).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Mesurer sur le NAS (ou une machine comparable) la constante d'itérations pour 200 candidatures et
+    14 créneaux et l'écrire dans le récapitulatif.
+- id: "4-3"
+  title: Proposition dans l'écran de composition
+  description: >-
+    Requête de proposition sous droit organisateur en `spawn_blocking`, feuille d'objectif, « Calcul… »,
+    brouillon avec badges « Proposé », Appliquer / Abandonner ; déploiement et essai sur un événement réel
+    (SPEC CAP-4, success signal).
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: ""
