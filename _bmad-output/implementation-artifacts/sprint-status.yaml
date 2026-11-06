@@ -29,14 +29,14 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 11-06-2026 10:36
-last_updated: 11-06-2026 10:37
+last_updated: 11-06-2026 13:19
 project: aion2-raid-planner
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/specs/spec-epic-<N>-*/stories
 development_status:
-  epic-1: backlog
-  1-1-squelette-du-binaire-base-sqlite-et-sante: backlog
+  epic-1: in-progress
+  1-1-squelette-du-binaire-base-sqlite-et-sante: review
   1-2-reference-du-jeu-en-toml-rechargee-a-chaud: backlog
   1-3-conteneur-durci-et-ci-complete: backlog
   1-4-deploiement-par-runner-edge-et-sauvegardes: backlog

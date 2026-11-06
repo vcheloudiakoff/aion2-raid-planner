@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/domain", "crates/server"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+publish = false
+
+# Versions figées sur la table Stack de la spine d'architecture.
+[workspace.dependencies]
+domain = { path = "crates/domain" }
+axum = "=0.8.9"
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+sqlx = { version = "=0.8.6", default-features = false }
+rust-embed = { version = "=8.13.0", features = ["mime-guess", "include-exclude", "debug-embed"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+chrono = { version = "=0.4.45", default-features = false, features = ["std", "clock"] }
+rand = "=0.10.3"
+data-encoding = "=2.11.1"
+thiserror = "=2.0.21"
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }

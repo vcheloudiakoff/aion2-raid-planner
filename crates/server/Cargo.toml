@@ -1,0 +1,22 @@
+[package]
+name = "server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain = { workspace = true, features = ["sqlx"] }
+axum.workspace = true
+tokio.workspace = true
+sqlx = { workspace = true, features = ["runtime-tokio", "sqlite", "chrono", "migrate", "macros"] }
+rust-embed.workspace = true
+chrono.workspace = true
+rand.workspace = true
+data-encoding.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tower = { version = "=0.5.3", features = ["util"] }

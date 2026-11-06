@@ -7,10 +7,12 @@ _bmad/config.user.toml
 .env.*
 !.env.example
 
-# Dépendances et builds (à préciser quand la stack sera choisie)
+# Dépendances et builds
 node_modules/
-dist/
 target/
+# Build Vite : seul web/dist/.gitkeep est versionné, pour que `cargo check` passe sans build web.
+/web/dist/*
+!/web/dist/.gitkeep
 
 # OS, éditeurs, Claude Code local
 .DS_Store

@@ -1,0 +1,20 @@
+[package]
+name = "domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# Noyau pur : aucune I/O. `sqlx` n'est qu'une feature optionnelle, activée par `server` seulement,
+# pour que `Timestamp` implémente `sqlx::Type` sans violer la règle d'orphelin (AD-11).
+[features]
+sqlx = ["dep:sqlx"]
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+sqlx = { workspace = true, optional = true, features = ["sqlite"] }
+
+[dev-dependencies]
+serde_json = "=1.0.154"
