@@ -12,6 +12,7 @@ use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
 
 use super::dto;
+use super::errors::Code;
 use crate::app::AppState;
 
 /// Octets de SHA-256 gardés dans l'`ETag` (128 bits, 32 caractères hexadécimaux).
@@ -19,13 +20,13 @@ const ETAG_BYTES: usize = 16;
 
 pub async fn get_reference(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(set) = state.reference.get() else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        return Code::ReferenceUnavailable.into_response();
     };
     let body = match serde_json::to_vec(&dto::ReferenceSet::from(set.as_ref())) {
         Ok(b) => b,
         Err(e) => {
             tracing::error!(error = %e, "reference serialization failed");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            return Code::ServerInternal.into_response();
         }
     };
     let tag = etag(&body);

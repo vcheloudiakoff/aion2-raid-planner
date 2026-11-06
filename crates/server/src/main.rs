@@ -1,5 +1,5 @@
-//! Point d'entrée : sous-commandes `serve` (défaut), `healthcheck`, `validate-reference`, `backup`
-//! et `restore`.
+//! Point d'entrée : sous-commandes `serve` (défaut), `healthcheck`, `validate-reference`,
+//! `list-error-codes`, `backup` et `restore`.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
@@ -24,6 +24,13 @@ fn main() -> ExitCode {
         (Some("validate-reference"), dir, None) => validate_reference(Path::new(
             dir.as_deref().unwrap_or(reference::REFERENCE_DIR),
         )),
+        // Avant `Config` : la CI compare le registre aux locales du client (AD-5, AD-12).
+        (Some("list-error-codes"), None, None) => {
+            for code in http::errors::Code::sorted() {
+                println!("{code}");
+            }
+            ExitCode::SUCCESS
+        }
         (Some("healthcheck"), None, None) => {
             match healthcheck::check(healthcheck::ADDR, healthcheck::TIMEOUT) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -49,7 +56,7 @@ fn main() -> ExitCode {
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: server [serve | healthcheck | validate-reference [DIR] | backup [daily | pre-deploy] | restore [NAME]]"
+        "usage: server [serve | healthcheck | validate-reference [DIR] | list-error-codes | backup [daily | pre-deploy] | restore [NAME]]"
     );
     ExitCode::from(2)
 }

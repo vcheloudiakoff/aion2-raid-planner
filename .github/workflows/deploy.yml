@@ -105,6 +105,12 @@ jobs:
       - name: validate-reference
         run: cargo run --locked -q -p server -- validate-reference reference
 
+      # Chaque code du registre traduit dans fr.json et en.json, aucune clé errors.* orpheline.
+      # `shell: bash` explicite = pipefail : un échec de cargo ne passe pas pour une liste vide.
+      - name: list-error-codes contre les locales
+        shell: bash
+        run: cargo run --locked -q -p server -- list-error-codes | node web/scripts/check-error-codes.mjs
+
       # --- Durcissement du conteneur et fuites du dépôt public (AD-8, AD-10) -------------------
 
       - name: check-hardening

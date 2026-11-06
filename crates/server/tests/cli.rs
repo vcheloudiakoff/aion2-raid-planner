@@ -28,6 +28,7 @@ fn unknown_argument_exits_2_with_usage() {
         &["backup", "weekly"],
         &["backup", "daily", "x"],
         &["restore", "a", "b"],
+        &["list-error-codes", "x"],
     ] {
         let out = run(&mut server(args));
         assert_eq!(out.status.code(), Some(2), "{args:?}");
@@ -128,4 +129,23 @@ fn backup_without_database_fails_without_creating_it() {
         assert!(stderr(&out).contains("error:"), "{args:?}");
     }
     assert!(!std::path::Path::new("/data/app.db").exists());
+}
+
+#[test]
+fn list_error_codes_prints_sorted_registry_without_config() {
+    let out = run(&mut server(&["list-error-codes"]));
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines, server::http::errors::Code::sorted());
+    assert!(lines.windows(2).all(|w| w[0] < w[1]), "sorted, unique");
+    for expected in [
+        "reference.unavailable",
+        "server.internal",
+        "server.method_not_allowed",
+        "server.not_found",
+        "server.unavailable",
+    ] {
+        assert!(lines.contains(&expected), "{expected}");
+    }
 }

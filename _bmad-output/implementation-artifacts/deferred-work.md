@@ -27,3 +27,9 @@
 - source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-4-deploiement-par-runner-edge-et-sauvegardes.md`
   summary: Rendre visible un échec durable de la sauvegarde quotidienne (âge de la dernière `daily` exposé par la santé ou contrôlé par le job `deploy`).
   evidence: aujourd'hui seul `tracing` le signale, avec des journaux bornés à 3 × 10 Mo ; une sauvegarde cassée ne se découvrirait qu'au moment de restaurer.
+- source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-5-coquille-spa-bilingue-et-contrat-d-erreurs.md`
+  summary: Tester la bascule du thème quand le système passe de clair à sombre sans choix mémorisé (abonnement `matchMedia` ré-exécutable sous test).
+  evidence: l'abonnement est posé au chargement du module, avant tout stub ; supprimer `addEventListener("change", update)` laisse les tests verts.
+- source_spec: `_bmad-output/specs/spec-epic-1-socle/stories/1-5-coquille-spa-bilingue-et-contrat-d-erreurs.md`
+  summary: Amender AD-5 dans la spine (`bmad-architecture`) : entité `server` dans la liste fermée, et bandeau « Nouvelle version » sans rechargement forcé à la place du rechargement automatique.
+  evidence: décision de Vincent du 2026-11-06 en story 1-5 ; SPEC CAP-10 et la spine divergent sur le rechargement.

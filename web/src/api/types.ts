@@ -64,3 +64,12 @@ export interface ReferenceSet {
   classes: GameClass[];
   roles: Role[];
 }
+
+/** Corps `application/problem+json` de toute erreur `/api/*` (RFC 9457). `title` est le libellé HTTP
+ * standard, jamais un texte à afficher : le client traduit `errors.<code>`. */
+export interface Problem {
+  type: string;
+  title: string;
+  status: number;
+  code: string;
+}

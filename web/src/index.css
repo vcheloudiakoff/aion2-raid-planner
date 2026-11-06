@@ -1,0 +1,137 @@
+/* Tokens de DESIGN.md en variables CSS. Sombre par défaut ; clair si le système le demande et que
+   rien n'est choisi, ou si `data-theme="light"` est posé sur <html>. */
+@import "tailwindcss";
+
+@theme inline {
+  --color-*: initial;
+  --color-surface-base: var(--surface-base);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-ink-primary: var(--ink-primary);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-disabled: var(--ink-disabled);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-available: var(--available);
+  --color-pending: var(--pending);
+  --color-danger: var(--danger);
+  --color-faction-elyos: var(--faction-elyos);
+  --color-faction-asmodian: var(--faction-asmodian);
+  --color-backdrop: rgb(0 0 0 / 0.5);
+}
+
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --text-display: 24px;
+  --text-display--line-height: 1.25;
+  --text-display--font-weight: 700;
+  --text-title: 20px;
+  --text-title--line-height: 1.3;
+  --text-title--font-weight: 600;
+  --text-body: 16px;
+  --text-body--line-height: 1.5;
+  --text-body--font-weight: 400;
+  --text-label: 14px;
+  --text-label--line-height: 1.35;
+  --text-label--font-weight: 600;
+  --text-meta: 13px;
+  --text-meta--line-height: 1.4;
+  --text-meta--font-weight: 400;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --spacing-tap: 44px;
+  --container-content: 640px;
+}
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-base: #121418;
+  --surface-raised: #1b1e24;
+  --surface-sunken: #0d0f12;
+  --ink-primary: #e9ebef;
+  --ink-secondary: #a3a9b4;
+  --ink-disabled: #5d636d;
+  --border: #2c313a;
+  --accent: #e0b04a;
+  --on-accent: #121418;
+  --available: #4cc38a;
+  --pending: #7aaeef;
+  --danger: #ef7a70;
+  --faction-elyos: #8cc2f0;
+  --faction-asmodian: #c79be6;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --surface-base: #f6f6f3;
+    --surface-raised: #ffffff;
+    --surface-sunken: #ecece8;
+    --ink-primary: #17191d;
+    --ink-secondary: #575d67;
+    --ink-disabled: #a5aab2;
+    --border: #d8dade;
+    --accent: #8a5e0a;
+    --on-accent: #ffffff;
+    --available: #1c7449;
+    --pending: #2a5c9c;
+    --danger: #b3261e;
+    --faction-elyos: #2a6aa6;
+    --faction-asmodian: #7438a0;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --surface-base: #f6f6f3;
+  --surface-raised: #ffffff;
+  --surface-sunken: #ecece8;
+  --ink-primary: #17191d;
+  --ink-secondary: #575d67;
+  --ink-disabled: #a5aab2;
+  --border: #d8dade;
+  --accent: #8a5e0a;
+  --on-accent: #ffffff;
+  --available: #1c7449;
+  --pending: #2a5c9c;
+  --danger: #b3261e;
+  --faction-elyos: #2a6aa6;
+  --faction-asmodian: #7438a0;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--surface-base);
+    color: var(--ink-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    overflow-x: hidden;
+  }
+  /* Focus clavier visible dans les deux thèmes : l'accent contraste sur chaque surface. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

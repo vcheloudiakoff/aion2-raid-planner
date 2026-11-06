@@ -382,7 +382,12 @@ async fn startup_without_valid_set_serves_503_and_retries() {
     for path in ["/api/health", "/api/reference"] {
         let (res, body) = send(&router, Method::GET, path).await;
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE, "{path}");
-        assert!(body.is_empty(), "{path}");
+        let code = if path == "/api/health" {
+            "server.unavailable"
+        } else {
+            "reference.unavailable"
+        };
+        assert_problem(&res, &body, code, path);
         assert_eq!(header(&res, "x-app-build"), APP_BUILD);
         assert_eq!(header(&res, "cache-control"), "no-store");
     }

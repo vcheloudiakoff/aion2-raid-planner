@@ -39,7 +39,7 @@ async fn health_ko_when_pool_closed() {
     let router = fixture_router(state);
     let (res, body) = send(&router, Method::GET, "/api/health").await;
     assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body.is_empty(), "503 carries no detail");
+    assert_problem(&res, &body, "server.unavailable", "pool closed");
     assert_eq!(header(&res, "x-app-build"), APP_BUILD);
 }
 
@@ -52,7 +52,7 @@ async fn health_ko_when_embedded_migration_not_applied() {
     let router = fixture_router(state);
     let (res, body) = send(&router, Method::GET, "/api/health").await;
     assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body.is_empty());
+    assert_problem(&res, &body, "server.unavailable", "migration");
 }
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn health_ko_when_applied_migration_mismatches() {
         let router = fixture_router(state);
         let (res, body) = send(&router, Method::GET, "/api/health").await;
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE, "{case}");
-        assert!(body.is_empty(), "{case}");
+        assert_problem(&res, &body, "server.unavailable", case);
     }
 }
 
@@ -175,14 +175,51 @@ async fn unknown_api_is_404_never_index() {
     ] {
         let (res, body) = send(&router, Method::GET, uri).await;
         assert_eq!(res.status(), StatusCode::NOT_FOUND, "{uri}");
-        assert!(body.is_empty(), "{uri}");
+        assert_problem(&res, &body, "server.not_found", uri);
         assert_eq!(header(&res, "cache-control"), "no-store", "{uri}");
         assert_eq!(header(&res, "x-app-build"), APP_BUILD, "{uri}");
     }
     // Barre finale : atteint le repli SPA, qui doit répondre 404 et non 405.
     let (res, body) = send(&router, Method::POST, "/api/").await;
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    assert!(body.is_empty());
+    assert_problem(&res, &body, "server.not_found", "POST /api/");
+}
+
+#[tokio::test]
+async fn wrong_method_on_api_route_is_405_problem() {
+    let router = fixture_router(memory_state("api_405").await);
+    for (method, uri) in [
+        (Method::POST, "/api/health"),
+        (Method::DELETE, "/api/reference"),
+    ] {
+        let (res, body) = send(&router, method.clone(), uri).await;
+        assert_eq!(
+            res.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{method} {uri}"
+        );
+        assert_problem(&res, &body, "server.method_not_allowed", uri);
+        assert!(header(&res, "allow").contains("GET"), "{uri}: Allow");
+        assert_eq!(header(&res, "x-app-build"), APP_BUILD, "{uri}");
+        assert_eq!(header(&res, "cache-control"), "no-store", "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn reference_absent_is_503_problem_with_retry_after() {
+    let db = memory_db("ref_absent").await;
+    let router = fixture_router(state_with(
+        db,
+        server::infra::reference::ReferenceStore::new(),
+    ));
+    let (res, body) = send(&router, Method::GET, "/api/reference").await;
+    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_problem(&res, &body, "reference.unavailable", "reference");
+    assert_eq!(
+        header(&res, "retry-after"),
+        server::http::errors::DEFAULT_RETRY_AFTER_SECS.to_string()
+    );
+    assert_eq!(header(&res, "x-app-build"), APP_BUILD);
 }
 
 /// Avec `npm run build` fait avant `cargo build`, la vraie page embarquée est servie avec la CSP

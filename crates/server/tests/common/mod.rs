@@ -103,3 +103,32 @@ impl Drop for TempDir {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
+
+/// Corps `application/problem+json` exact : `{type, title, status, code}` et rien d'autre ; 503 et
+/// 429 portent `Retry-After`.
+pub fn assert_problem(res: &Response<Body>, body: &str, code: &str, ctx: &str) {
+    let status = res.status();
+    assert_eq!(
+        header(res, "content-type"),
+        "application/problem+json",
+        "{ctx}"
+    );
+    let v: serde_json::Value = serde_json::from_str(body).unwrap_or_else(|e| panic!("{ctx}: {e}"));
+    let obj = v.as_object().unwrap();
+    let mut keys: Vec<_> = obj.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["code", "status", "title", "type"], "{ctx}");
+    assert_eq!(v["type"], "about:blank", "{ctx}");
+    assert_eq!(v["title"], status.canonical_reason().unwrap(), "{ctx}");
+    assert_eq!(v["status"], status.as_u16(), "{ctx}");
+    assert_eq!(v["code"], code, "{ctx}");
+    let retry = header(res, "retry-after");
+    if status.as_u16() == 503 || status.as_u16() == 429 {
+        assert!(
+            retry.parse::<u64>().is_ok_and(|s| s > 0),
+            "{ctx}: Retry-After"
+        );
+    } else {
+        assert!(retry.is_empty(), "{ctx}: no Retry-After");
+    }
+}
