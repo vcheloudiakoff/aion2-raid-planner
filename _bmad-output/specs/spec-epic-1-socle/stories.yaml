@@ -1,0 +1,81 @@
+- id: "1-1"
+  title: Squelette du binaire, base SQLite et santé
+  description: >-
+    Workspace Cargo `domain` + `server` et SPA Vite minimale embarquée, Config fail-fast, SQLite à deux
+    pools et migrations, `Timestamp`, `Clock` et générateur injectés, `/api/health` et sous-commande
+    `healthcheck`, en-têtes applicatifs et `X-App-Build` (SPEC CAP-1, CAP-2, CAP-6 côté application).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Suivre la structure de la Structural Seed et la table Stack de la spine. Aucun écran métier : la SPA
+    affiche une page vide qui sera remplacée en 1-5. Les en-têtes de sécurité sont posés par le binaire
+    (AD-9), pas par Caddy.
+- id: "1-2"
+  title: Référence du jeu en TOML, rechargée à chaud
+  description: >-
+    Cinq fichiers `reference/`, validateur commun (démarrage, rechargement, sous-commande
+    `validate-reference`), rechargement atomique par mtime et `GET /api/reference` avec ETag, contenu
+    initial de `reference-schema.md` (SPEC CAP-3).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Le contenu initial est marqué [ASSUMPTION] dans reference-schema.md : le saisir tel quel, sans ajouter
+    de serveurs de lancement. `app::health()` inclut désormais « référence chargée ».
+- id: "1-3"
+  title: Conteneur durci et CI complète
+  description: >-
+    Dockerfile multi-étapes `node → rust → scratch`, `deploy/docker-compose.yml` conforme à AD-8,
+    `deploy/.env.example`, `deploy/check-hardening.sh` testé par fixtures, et job `ci` avec toute la liste
+    d'AD-10 dont le contrôle des crates réseau et le budget de poids (SPEC CAP-4).
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Vincent n'est pas spécialiste sécurité : chaque ligne de durcissement du compose porte un commentaire
+    d'une ligne qui dit ce qu'elle empêche. Aucune adresse ni nom d'hôte réel. Le job `deploy` n'est pas
+    créé ici (story 1-4).
+- id: "1-4"
+  title: Déploiement par runner, edge et sauvegardes
+  description: >-
+    Job `deploy` sur le runner du NAS avec garde-fou de migrations, `VACUUM INTO` préalable, copie de
+    `reference/` et health-check, tâche périodique de sauvegarde quotidienne, exemples Caddy VPS et NAS,
+    procédure d'installation et de restauration ; premier déploiement en production (SPEC CAP-5, CAP-6).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Les gestes sur le NAS, le VPS et le DNS sont faits par Vincent : écrire la procédure pas à pas dans
+    `deploy/README.md` avec placeholders, ne jamais deviner un hôte ni une IP. Commencer par lui faire
+    vérifier les versions Docker Engine et Compose du NAS (question ouverte du SPEC).
+- id: "1-5"
+  title: Coquille SPA bilingue et contrat d'erreurs
+  description: >-
+    `client.ts` (conditionnel manuel, `X-App-Build`), `t()` et locales fr/en, thème, feuille Langue ·
+    Thème, accueil à l'état vide, cache de référence, bandeaux hors ligne et nouvelle version, registre
+    `http::errors::Code` en problem+json et test `list-error-codes` contre les locales (SPEC CAP-7, CAP-10).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Visuel selon DESIGN.md (tokens, sombre par défaut), comportements selon EXPERIENCE.md State Patterns
+    et Voice and Tone. Pas de bouton « Créer un raid » actif tant que l'epic 2 n'est pas livré.
+- id: "1-6"
+  title: Droits par liens secrets
+  description: >-
+    Génération des secrets 256 bits et ids 128 bits, stockage du seul SHA-256, extracteur `LinkSecret` par
+    droit et portée avec 401/403/404, `X-Robots-Tag` sur les chemins secrets, module `links.ts` sur
+    `links.v1` (SPEC CAP-8).
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Prouver l'extracteur sur des routes compilées sous `cfg(test)` ; aucune route métier ici. Expliquer à
+    Vincent dans le récapitulatif pourquoi le secret passe par `X-Link-Secret` et jamais par l'URL d'API.
+- id: "1-7"
+  title: Anti-abus sans compte
+  description: >-
+    IP visiteur par en-tête mono-valeur de confiance, limiteur par classe de route avec `Retry-After`,
+    `GET /api/form-token` et jeton HMAC, honeypot, bornes de champs dans `domain::validate`, disjoncteur à
+    seuils ; fin d'epic, déploiement vérifié contre le signal de succès (SPEC CAP-9).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Prouver les classes `create` et `candidature` sur des routes de test. Aucune IP en base ni en journal :
+    ajouter un test qui le vérifie sur la sortie `tracing`. Pas d'interrupteur admin ni de preuve de
+    travail (non-goals).
