@@ -80,7 +80,8 @@ pub async fn submit_candidature(
     Ok(submitted)
 }
 
-fn context(event: &EventSnapshot) -> EventContext {
+/// Ce que la validation de candidature doit savoir de l'événement.
+pub(crate) fn context(event: &EventSnapshot) -> EventContext {
     EventContext {
         region: event.region.clone(),
         faction_scope: event.faction_scope,

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod candidatures;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 

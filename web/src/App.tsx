@@ -11,7 +11,7 @@ import { Home } from "./pages/Home";
 import { EventPage } from "./pages/EventPage";
 import { NewEvent } from "./pages/NewEvent";
 import { OrganizerPending } from "./pages/OrganizerPending";
-import { ParticipantPending } from "./pages/ParticipantPending";
+import { ParticipantPage } from "./pages/ParticipantPage";
 
 export function App() {
   const lang = useLang();
@@ -30,8 +30,7 @@ export function App() {
         <Route path="/o/:secret" element={<OrganizerPending />} />
         <Route path="/e/:id" element={<EventPage reference={reference?.data ?? null} mode="public" />} />
         <Route path="/j/:secret" element={<EventPage reference={reference?.data ?? null} mode="join" />} />
-        {/* Page provisoire, remplacée par la vue participant en 2-3. */}
-        <Route path="/p/:secret" element={<ParticipantPending />} />
+        <Route path="/p/:secret" element={<ParticipantPage reference={reference?.data ?? null} />} />
         {/* Sans redirection : l'adresse reste intacte pour les routes des stories suivantes. */}
         <Route path="*" element={<Home />} />
       </Routes>

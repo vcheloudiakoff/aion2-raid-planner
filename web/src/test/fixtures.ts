@@ -1,5 +1,5 @@
 // Données de test partagées : valeurs fictives, jamais la référence réelle.
-import type { CreatedCandidature, CreatedEvent, PublicEvent, ReferenceSet } from "../api/types";
+import type { CreatedCandidature, CreatedEvent, ParticipantView, PublicEvent, ReferenceSet } from "../api/types";
 
 export const reference: ReferenceSet = {
   regions: [
@@ -88,4 +88,20 @@ export const createdCandidature: CreatedCandidature = {
   participantSecret: PARTICIPANT,
   status: "pending",
   links: { participant: `/p/${PARTICIPANT}` },
+};
+
+/** Vue participant : en attente, créneau à venir `slot_a` préféré, créneau passé coché. */
+export const participantView: ParticipantView = {
+  eventId: EVENT_ID,
+  candidatureId: CANDIDATURE_ID,
+  pseudo: "Nyra",
+  server: "s_a",
+  class: "c1",
+  cp: 1500,
+  status: "pending",
+  availabilities: [
+    { slotId: "slot_past", preferred: false },
+    { slotId: "slot_a", preferred: true },
+  ],
+  event: publicEvent,
 };

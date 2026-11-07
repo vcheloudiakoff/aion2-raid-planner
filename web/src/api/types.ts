@@ -162,3 +162,20 @@ export interface CreatedCandidature {
   status: CandidatureStatus;
   links: { participant: string };
 }
+
+/** `GET /api/participant` et réponse des commandes du participant, sous son lien `/p/` : sa seule
+ * candidature et l'événement public. `discordUrl` présent seulement si `accepted` et que l'événement
+ * a un lien. Placement, salle et confirmation arrivent avec les epics 3 et 5. */
+export interface ParticipantView {
+  eventId: string;
+  candidatureId: string;
+  pseudo: string;
+  server: string;
+  class: string;
+  cp: number;
+  status: CandidatureStatus;
+  /** Triées par début de créneau, créneaux passés compris. */
+  availabilities: { slotId: string; preferred: boolean }[];
+  event: PublicEvent;
+  discordUrl?: string;
+}

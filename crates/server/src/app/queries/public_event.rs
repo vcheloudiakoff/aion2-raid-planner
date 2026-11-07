@@ -2,6 +2,7 @@
 //! (`/j/`). Aucune donnée nominative ; comptes par classe et par rôle calculés ici (AD-4, AD-6).
 
 use domain::counts::{ClassMin, public_counts};
+use domain::reference::ReferenceSet;
 
 use crate::app::AppState;
 use crate::http::dto::{MissingRole, PublicEvent, PublicSlot};
@@ -14,6 +15,11 @@ pub async fn public_event(state: &AppState, event_id: &str) -> Result<PublicEven
         return Err(Code::ReferenceUnavailable.into());
     };
     let snapshot = read(state, event_id).await?;
+    Ok(build(&reference, snapshot))
+}
+
+/// `PublicEvent` d'un instantané : comptes par classe et par rôle, rôles manquants.
+pub fn build(reference: &ReferenceSet, snapshot: EventSnapshot) -> PublicEvent {
     let bounds: Vec<ClassMin> = snapshot
         .bounds
         .iter()
@@ -22,8 +28,8 @@ pub async fn public_event(state: &AppState, event_id: &str) -> Result<PublicEven
             min: b.min,
         })
         .collect();
-    let counts = public_counts(&reference, &bounds, &snapshot.counted_classes);
-    Ok(PublicEvent {
+    let counts = public_counts(reference, &bounds, &snapshot.counted_classes);
+    PublicEvent {
         id: snapshot.id,
         instance: snapshot.instance,
         region: snapshot.region,
@@ -51,7 +57,7 @@ pub async fn public_event(state: &AppState, event_id: &str) -> Result<PublicEven
                 missing: m.missing,
             })
             .collect(),
-    })
+    }
 }
 
 /// L'événement sur le pool de lecture ; `event.not_found` s'il n'existe pas.

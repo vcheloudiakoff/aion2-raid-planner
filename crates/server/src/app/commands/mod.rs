@@ -3,3 +3,5 @@
 
 pub mod create_event;
 pub mod submit_candidature;
+pub mod update_candidature;
+pub mod withdraw_candidature;

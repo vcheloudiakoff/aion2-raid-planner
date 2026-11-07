@@ -6,7 +6,7 @@ import { resetClientForTests } from "./api/client";
 import { REFERENCE_CACHE_KEY } from "./api/reference";
 import { resetLangForTests } from "./i18n";
 import { byText, mount, type Mounted } from "./test/dom";
-import { EVENT_ID, JOIN, ORGANIZER, PARTICIPANT, publicEvent, reference } from "./test/fixtures";
+import { EVENT_ID, JOIN, ORGANIZER, PARTICIPANT, participantView, publicEvent, reference } from "./test/fixtures";
 
 let m: Mounted | null = null;
 
@@ -186,13 +186,34 @@ describe("routes", () => {
     expect(fetch.mock.calls.some(([url]) => String(url).includes(JOIN))).toBe(false);
   });
 
-  it("serves the pending participant page on /p/<secret>, secret out of the title", () => {
+  it("serves the participant page on /p/<secret>, secret in the header and out of the title", async () => {
     lang("fr-FR");
-    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    localStorage.setItem(
+      REFERENCE_CACHE_KEY,
+      JSON.stringify({ etag: '"e"', data: reference, fetchedAt: "2026-11-06T20:04:00Z" }),
+    );
+    const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url === "/api/participant") {
+        return new Response(JSON.stringify(participantView), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetch);
     window.history.pushState({}, "", `/p/${PARTICIPANT}`);
     m = mount(<App />);
+    await flush();
     expect(m.container.querySelector("h1")?.textContent).toBe("Ton lien personnel");
     expect(m.container.textContent).toContain(`/p/${PARTICIPANT}`);
+    expect(m.container.querySelector('[data-testid="status-badge"]')?.textContent).toBe(
+      "En attente de l'organisateur",
+    );
+    expect(m.container.textContent).toContain("Classe Soin");
+    const read = fetch.mock.calls.find(([url]) => url === "/api/participant")!;
+    expect((read[1]?.headers as Record<string, string>)["X-Link-Secret"]).toBe(PARTICIPANT);
+    expect(fetch.mock.calls.some(([url]) => String(url).includes(PARTICIPANT))).toBe(false);
     expect(document.title).not.toContain(PARTICIPANT);
   });
 });

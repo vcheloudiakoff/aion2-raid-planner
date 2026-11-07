@@ -7,56 +7,22 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use axum::http::{Method, StatusCode};
+use common::candidatures::*;
 use common::*;
-use domain::Timestamp;
-use domain::reference::{Faction, Label, Server};
 use serde_json::{Value, json};
 use server::app::AppState;
 use server::config::Config;
 use server::http::form_token::FormClass;
 use server::infra::links::{self, Right};
-use server::infra::reference::{self, ReferenceStore};
 
-const NOW: &str = "2026-11-06T10:00:00Z";
 const JOIN_CANDIDATURES: &str = "/api/join/candidatures";
-
-fn ago(secs: i64) -> Timestamp {
-    Timestamp::from_unix_seconds(NOW.parse::<Timestamp>().unwrap().unix_seconds() - secs).unwrap()
-}
-
-fn token(state: &AppState, class: FormClass) -> String {
-    state.form_tokens.issue(class, ago(10), [3; 16])
-}
 
 fn public_uri(event_id: &str) -> String {
     format!("/api/events/{event_id}/candidatures")
 }
 
-/// Référence embarquée, plus un serveur d'une autre région (valeurs fictives).
-fn reference_set() -> domain::reference::ReferenceSet {
-    let mut set = reference::embedded().unwrap();
-    set.servers.push(Server {
-        id: "far_away".into(),
-        region: "na_west".into(),
-        faction: Faction::Elyos,
-        tag: "Far".into(),
-        label: Label {
-            en: "Far".into(),
-            fr: None,
-        },
-        enabled: true,
-    });
-    set
-}
-
 async fn setup_with(name: &str, config: &Config) -> (AppState, axum::Router) {
-    let state = state_with_config(
-        memory_db(&format!("cand_{name}")).await,
-        ReferenceStore::with(reference_set()),
-        config,
-    );
-    let router = fixture_router(state.clone());
-    (state, router)
+    candidature_setup(&format!("cand_{name}"), config).await
 }
 
 async fn setup(name: &str) -> (AppState, axum::Router) {
@@ -65,66 +31,6 @@ async fn setup(name: &str) -> (AppState, axum::Router) {
         &test_config(&[("RATE_CREATE", "100/h"), ("RATE_CANDIDATURE", "1000/h")]),
     )
     .await
-}
-
-struct Event {
-    id: String,
-    organizer: String,
-    join: String,
-    /// Ids des créneaux, triés par début.
-    slots: Vec<String>,
-}
-
-async fn create(state: &AppState, router: &axum::Router, scope: &str) -> Event {
-    let body = json!({
-        "formToken": token(state, FormClass::Create),
-        "instance": "ludra",
-        "region": "europe",
-        "factionScope": scope,
-        "slots": [
-            { "startsAt": "2026-11-11T20:00:00Z" },
-            { "startsAt": "2026-11-12T20:00:00Z" },
-        ],
-    });
-    let (res, text) = post_json(router, "/api/events", &body).await;
-    assert_eq!(res.status(), StatusCode::CREATED, "{text}");
-    let v: Value = serde_json::from_str(&text).unwrap();
-    let id = v["eventId"].as_str().unwrap().to_owned();
-    let slots: Vec<(String,)> =
-        sqlx::query_as("SELECT id FROM slots WHERE event_id = ? ORDER BY starts_at")
-            .bind(&id)
-            .fetch_all(&state.db.read)
-            .await
-            .unwrap();
-    Event {
-        id,
-        organizer: v["organizerSecret"].as_str().unwrap().into(),
-        join: v["joinSecret"].as_str().unwrap().into(),
-        slots: slots.into_iter().map(|(s,)| s).collect(),
-    }
-}
-
-/// Corps nominal : Asmodienne d'Europe, Clerc, les deux créneaux, tous deux préférés.
-fn nominal(state: &AppState, e: &Event) -> Value {
-    json!({
-        "formToken": token(state, FormClass::Candidature),
-        "website": "",
-        "pseudo": "Nyraelle",
-        "server": "israphel",
-        "class": "cleric",
-        "cp": 1500,
-        "availabilities": [
-            { "slotId": e.slots[0], "preferred": true },
-            { "slotId": e.slots[1], "preferred": true },
-        ],
-    })
-}
-
-fn with(mut body: Value, patch: Value) -> Value {
-    for (k, v) in patch.as_object().unwrap() {
-        body[k] = v.clone();
-    }
-    body
 }
 
 async fn count(state: &AppState, table: &str) -> i64 {
@@ -145,19 +51,6 @@ async fn assert_nothing_written(state: &AppState, ctx: &str) {
             .await
             .unwrap();
     assert_eq!(n, 0, "{ctx}");
-}
-
-fn assert_fields(
-    res: &axum::http::Response<axum::body::Body>,
-    body: &str,
-    code: &str,
-    fields: Value,
-) {
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{body}");
-    assert_eq!(header(res, "content-type"), "application/problem+json");
-    let v: Value = serde_json::from_str(body).unwrap();
-    assert_eq!(v["code"], code, "{body}");
-    assert_eq!(v["fields"], fields, "{body}");
 }
 
 /// Vérifie la réponse 201 et les lignes écrites ; rend l'id de candidature et le secret.

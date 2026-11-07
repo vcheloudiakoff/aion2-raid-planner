@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use axum::http::StatusCode;
 use axum::http::header::{CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 use axum::response::{IntoResponse, Response};
-use domain::candidature::CandidatureError;
+use domain::candidature::{CandidatureError, ParticipantRefusal};
 use domain::event::EventError;
 use serde::Serialize;
 
@@ -62,10 +62,13 @@ codes! {
     CandidaturePseudoInvalid => "candidature.pseudo_invalid", BAD_REQUEST;
     CandidatureServerOutOfRegion => "candidature.server_out_of_region", BAD_REQUEST;
     CandidatureSlotUnknown => "candidature.slot_unknown", BAD_REQUEST;
+    CandidatureTransitionForbidden => "candidature.transition_forbidden", CONFLICT;
+    CandidatureWithdrawn => "candidature.withdrawn", CONFLICT;
     EventClassBoundsInvalid => "event.class_bounds_invalid", BAD_REQUEST;
     EventClosed => "event.closed", CONFLICT;
     EventDiscordUrlInvalid => "event.discord_url_invalid", BAD_REQUEST;
     EventFactionScopeNotAllowed => "event.faction_scope_not_allowed", BAD_REQUEST;
+    EventLocked => "event.locked", CONFLICT;
     EventMinCpOutOfRange => "event.min_cp_out_of_range", BAD_REQUEST;
     EventNotFound => "event.not_found", NOT_FOUND;
     EventNoteInvalid => "event.note_invalid", BAD_REQUEST;
@@ -146,6 +149,17 @@ impl From<CandidatureError> for Code {
             CandidatureError::NoAvailability => Code::CandidatureNoAvailability,
             CandidatureError::SlotUnknown => Code::CandidatureSlotUnknown,
             CandidatureError::SlotInPast => Code::SlotInPast,
+        }
+    }
+}
+
+impl From<ParticipantRefusal> for Code {
+    fn from(r: ParticipantRefusal) -> Self {
+        match r {
+            ParticipantRefusal::EventClosed => Code::EventClosed,
+            ParticipantRefusal::Withdrawn => Code::CandidatureWithdrawn,
+            ParticipantRefusal::EventLocked => Code::EventLocked,
+            ParticipantRefusal::TransitionForbidden => Code::CandidatureTransitionForbidden,
         }
     }
 }
@@ -416,7 +430,13 @@ mod tests {
 
     #[test]
     fn state_conflicts_are_409_and_absent_event_is_404() {
-        for code in [Code::EventClosed, Code::CandidatureLimitReached] {
+        for code in [
+            Code::EventClosed,
+            Code::CandidatureLimitReached,
+            Code::EventLocked,
+            Code::CandidatureWithdrawn,
+            Code::CandidatureTransitionForbidden,
+        ] {
             assert_eq!(code.status(), StatusCode::CONFLICT, "{code}");
         }
         assert_eq!(Code::EventNotFound.status(), StatusCode::NOT_FOUND);
@@ -424,6 +444,22 @@ mod tests {
             Code::CandidaturePreferenceNotAvailable.status(),
             StatusCode::BAD_REQUEST
         );
+    }
+
+    #[test]
+    fn every_participant_refusal_is_a_conflict() {
+        for (r, code) in [
+            (ParticipantRefusal::EventClosed, Code::EventClosed),
+            (ParticipantRefusal::Withdrawn, Code::CandidatureWithdrawn),
+            (ParticipantRefusal::EventLocked, Code::EventLocked),
+            (
+                ParticipantRefusal::TransitionForbidden,
+                Code::CandidatureTransitionForbidden,
+            ),
+        ] {
+            assert_eq!(Code::from(r), code);
+            assert_eq!(code.status(), StatusCode::CONFLICT, "{code}");
+        }
     }
 
     #[tokio::test]

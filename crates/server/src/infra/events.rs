@@ -221,3 +221,17 @@ pub async fn is_indexable(pool: &SqlitePool, event_id: &str) -> Result<bool, sql
     .await?;
     Ok(row.is_some_and(|(v,)| v == 1))
 }
+
+/// Lien Discord de l'événement : `None` si l'événement est inconnu, `Some(None)` s'il n'en a pas.
+/// Lu seulement sous un droit qui le voit (organisateur, participant `accepted`, AD-4).
+pub async fn discord_url(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+) -> Result<Option<Option<String>>, sqlx::Error> {
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT discord_url FROM events WHERE id = ?")
+            .bind(event_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+    Ok(row.map(|(url,)| url))
+}

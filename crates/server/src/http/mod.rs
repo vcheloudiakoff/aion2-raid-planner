@@ -10,6 +10,7 @@ pub mod form_token;
 pub mod headers;
 pub mod limits;
 pub mod links;
+pub mod participant;
 pub mod reference;
 
 #[cfg(test)]
@@ -44,6 +45,7 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
         .route("/form-token", get(form_token::get_form_token))
         .route("/events/{event_id}", get(candidatures::get_public_event))
         .route("/join", get(candidatures::get_join_event))
+        .route("/participant", get(participant::get_participant))
         .route_layer(middleware::from_fn_with_state(
             Guard::new(&state.limits, RouteClass::Read),
             limits::enforce,
@@ -70,12 +72,28 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
             Guard::new(&state.limits, RouteClass::Candidature),
             limits::enforce,
         ));
+    // Classe `write` : commandes sous le droit d'un lien, sans jeton de formulaire (AD-7), quota
+    // `RATE_WRITE`.
+    let write = Router::new()
+        .route(
+            "/participant/candidature",
+            post(participant::post_candidature),
+        )
+        .route(
+            "/participant/withdrawal",
+            post(participant::post_withdrawal),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            Guard::new(&state.limits, RouteClass::Write),
+            limits::enforce,
+        ));
     // Classe `nokey` : ni IP ni limiteur.
     let api = Router::new()
         .route("/health", get(get_health))
         .merge(read)
         .merge(create)
         .merge(candidature)
+        .merge(write)
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_method_not_allowed);
     // `/e/{event_id}` sert `index.html` comme le repli, avec un `noindex` conditionnel (AD-3) ;

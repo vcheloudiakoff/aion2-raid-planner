@@ -21,7 +21,7 @@ import {
   reference,
 } from "../test/fixtures";
 import { EventPage, REFRESH_MS } from "./EventPage";
-import { ParticipantPending } from "./ParticipantPending";
+import { ParticipantPage } from "./ParticipantPage";
 
 let m: Mounted;
 type Call = { url: string; init?: RequestInit };
@@ -70,7 +70,7 @@ async function render(path = `/e/${EVENT_ID}`) {
       <Routes>
         <Route path="/e/:id" element={<EventPage reference={reference} mode="public" />} />
         <Route path="/j/:secret" element={<EventPage reference={reference} mode="join" />} />
-        <Route path="/p/:secret" element={<ParticipantPending origin="https://raid.example.org" />} />
+        <Route path="/p/:secret" element={<ParticipantPage reference={reference} origin="https://raid.example.org" />} />
       </Routes>
     </MemoryRouter>,
   );

@@ -398,3 +398,34 @@ pub struct ParticipantLinks {
     /// `/p/<secret>`
     pub participant: String,
 }
+
+/// Réponse de `GET /api/participant` et des commandes du participant : sa seule candidature et
+/// l'événement public. Jamais une autre candidature ni un autre nom (AD-4 *Données exposées*).
+/// `discordUrl` n'existe que si la candidature est `accepted` et que l'événement a un lien.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticipantView {
+    pub event_id: String,
+    pub candidature_id: String,
+    pub pseudo: String,
+    pub server: String,
+    pub class: String,
+    pub cp: u32,
+    pub status: CandidatureStatus,
+    /// Triées par début de créneau, créneaux passés compris.
+    pub availabilities: Vec<ParticipantAvailability>,
+    pub event: PublicEvent,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discord_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticipantAvailability {
+    pub slot_id: String,
+    pub preferred: bool,
+}
+
+/// Corps de `POST /api/participant/withdrawal` : vide, `{}`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Withdrawal {}
