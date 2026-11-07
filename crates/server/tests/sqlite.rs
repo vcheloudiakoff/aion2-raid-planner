@@ -57,10 +57,10 @@ async fn memory_database_shares_one_base_across_pools() {
 }
 
 #[tokio::test]
-async fn tables_are_links_and_the_epic_2_model() {
-    // Liens secrets (1-6), puis le modèle de l'epic 2 (2-1) ; groupes, placements et confirmations
-    // arrivent avec l'epic 3.
-    let db = memory_db("epic_2_tables").await;
+async fn tables_are_links_the_epic_2_model_and_groups() {
+    // Liens secrets (1-6), le modèle de l'epic 2 (2-1), puis groupes et placements (3-2) ; les
+    // confirmations arrivent avec l'epic 5.
+    let db = memory_db("epic_3_tables").await;
     let tables: Vec<(String,)> = sqlx::query_as(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
          ORDER BY name",
@@ -73,10 +73,12 @@ async fn tables_are_links_and_the_epic_2_model() {
         names,
         [
             "_sqlx_migrations",
+            "assignments",
             "availabilities",
             "candidatures",
             "class_bounds",
             "events",
+            "groups",
             "links",
             "slots",
         ]

@@ -208,7 +208,7 @@ export interface OrganizerCandidature {
 }
 
 /** `GET /api/organizer` et réponse des commandes de l'organisateur, sous son lien `/o/`. `discordUrl`
- * présent seulement si l'événement a un lien ; `slot.hasGroups` arrive avec les groupes (epic 3). */
+ * présent seulement si l'événement a un lien. */
 export interface OrganizerEvent {
   event: PublicEvent;
   discordUrl?: string;
@@ -216,17 +216,36 @@ export interface OrganizerEvent {
   classBounds: Record<string, { min: number; max: number }>;
   /** Une entrée par créneau, dans l'ordre de `event.slots`. */
   slots: OrganizerSlot[];
+  /** Groupes, en sommeil compris (`retained` faux), triés par début de créneau puis par
+   * `occurrence`. Vide avant le premier verrouillage. */
+  groups: OrganizerGroup[];
   /** Ordre de création, jamais réordonnées. */
   candidatures: OrganizerCandidature[];
 }
 
 /** Couverture d'un créneau, calculée par le serveur sur les seules candidatures `accepted` (jamais
  * `pending`, `rejected` ni `withdrawn`). `coverage` : `classId → n`, une entrée par classe bornée
- * (zéros compris), plus toute classe `accepted` sans borne. */
+ * (zéros compris), plus toute classe `accepted` sans borne. `hasGroups` : un groupe existe sur ce
+ * créneau, même en sommeil ; le supprimer le perdrait. */
 export interface OrganizerSlot {
   slotId: string;
   availableAccepted: number;
   coverage: Record<string, number>;
+  hasGroups: boolean;
+}
+
+/** Un groupe : son créneau et son rang d'occurrence, `retained` s'il fait partie du verrouillage
+ * courant, la disposition et le libellé figés à sa création, et son nom de salle composé par le
+ * serveur. Le libellé « G1 » se calcule ici, sur les seuls groupes `retained`, dans l'ordre reçu. */
+export interface OrganizerGroup {
+  id: string;
+  slotId: string;
+  occurrence: number;
+  retained: boolean;
+  parties: number;
+  partySize: number;
+  roomLabel: string;
+  roomName: string;
 }
 
 /** Statut que l'organisateur peut demander. */
@@ -261,4 +280,9 @@ export interface UpdateEventSettings {
 /** Corps de `POST /api/organizer/slot-removal`. */
 export interface SlotRemoval {
   slotId: string;
+}
+
+/** Corps de `POST /api/organizer/lock` : un id de créneau par groupe, doublons répétés. */
+export interface LockEvent {
+  slotIds: string[];
 }

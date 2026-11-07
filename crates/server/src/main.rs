@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use server::app::AppState;
 use server::app::tasks;
-use server::config::{Config, LISTEN_PORT};
+use server::config::{Config, LISTEN_PORT, check_room_template};
 use server::infra::backup::{self, Kind};
 use server::infra::clock::{Clock, SystemClock};
 use server::infra::ids::SystemIdGenerator;
@@ -192,18 +192,25 @@ fn serve() -> ExitCode {
 }
 
 async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
-    let db = Db::open(sqlite::file_options(Path::new(sqlite::DB_PATH))).await?;
-    db.migrate().await?;
-
-    // Sans jeu valide, le serveur démarre quand même : santé et référence en 503, nouvel essai à
-    // chaque tick.
+    // Référence d'abord : un gabarit de nom de salle qui ne tient pas arrête le démarrage avant
+    // toute migration. Sans jeu valide, le serveur démarre quand même : santé et référence en 503,
+    // nouvel essai à chaque tick.
     let store = ReferenceStore::new();
     let mut loader = Loader::new(reference::REFERENCE_DIR, store.clone());
-    let loader = tokio::task::spawn_blocking(move || {
+    let mut loader = tokio::task::spawn_blocking(move || {
         loader.poll();
         loader
     })
     .await?;
+    if let Some(set) = store.get() {
+        check_room_template(&config.room_name_template, &set)?;
+    }
+    // Ensuite, un jeu rechargé que le gabarit ne tient plus est refusé, l'ancien gardé.
+    loader.guard_room_template(config.room_name_template.clone());
+
+    let db = Db::open(sqlite::file_options(Path::new(sqlite::DB_PATH))).await?;
+    db.migrate().await?;
+
     let _reload = tasks::reload::spawn(loader, tasks::reload::TICK);
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);

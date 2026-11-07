@@ -1,9 +1,12 @@
 // Page organisateur `/o/<secret>` (CAP-5, CAP-6, EXPERIENCE.md *Information Architecture*, *State
 // Patterns*, *Liens et appareils*) : titre instance + date, barre d'onglets fixe Candidatures ·
-// Disponibilités · Réglages. Candidatures liste toutes les candidatures dans l'ordre de création,
-// chaque ligne ouvre sa feuille (accepter, refuser, copier `Pseudo[SRV]`). Disponibilités montre la
-// grille joueurs × créneaux (`AvailabilityGrid`), nourrie par la même relecture, dont les lignes
-// ouvrent la même feuille. Réglages commence par « Ton lien d'organisateur » à copier pour changer
+// Disponibilités · Réglages, plus Composition et Salle entre les deux en `locked` (si l'onglet courant
+// disparaît, l'affichage revient sur Disponibilités). Candidatures liste toutes les candidatures dans
+// l'ordre de création, chaque ligne ouvre sa feuille (accepter, refuser, copier `Pseudo[SRV]`).
+// Disponibilités montre la grille joueurs × créneaux (`AvailabilityGrid`), nourrie par la même
+// relecture, dont les lignes ouvrent la même feuille, et, en `open`, « Verrouiller » ouvre la feuille
+// de verrouillage (`LockSheet`). Composition et Salle listent les groupes retenus (story 3-2 :
+// contenu minimal, sans action). Réglages commence par « Ton lien d'organisateur » à copier pour changer
 // d'appareil, puis `EventSettings` règle l'événement, ses créneaux et son annulation et propose
 // « Dupliquer » ; raid annulé, l'onglet est en lecture seule. Le lien est gardé sur cet appareil à la
 // première lecture ; si le navigateur ne peut pas le garder, la page le dit quel que soit l'onglet, en
@@ -22,8 +25,10 @@ import {
   addSlot,
   cancelEvent,
   getOrganizerView,
+  lockEvent,
   removeSlot,
   setCandidatureStatus,
+  unlockEvent,
   updateEventSettings,
 } from "../api/organizer";
 import type { Decision, OrganizerEvent, ReferenceSet } from "../api/types";
@@ -39,8 +44,10 @@ import {
   type SettingsCommand,
 } from "../components/EventSettings";
 import { eventTitle } from "../components/EventSummary";
+import { GroupList } from "../components/GroupList";
+import { LockSheet } from "../components/LockSheet";
 import { t, useLang } from "../i18n";
-import { errorText } from "../lib/form";
+import { errorText, type Fields } from "../lib/form";
 import { REFRESH_MS } from "./EventPage";
 
 /** Durée du liseré or d'une nouvelle candidature. */
@@ -54,16 +61,21 @@ const STATE_CODES = new Set([
   "candidature.transition_forbidden",
   "candidature.not_found",
   "slot.not_found",
+  "event.not_locked",
+  "event.no_upcoming_slot",
 ]);
 
-/** Commande en vol : une décision de la feuille, ou un geste de l'onglet Réglages. */
-type Pending = Decision | SettingsCommand;
+/** Commande en vol : une décision de la feuille, un verrouillage, ou un geste de l'onglet Réglages. */
+type Pending = Decision | SettingsCommand | "lock";
 
-const TABS = ["candidatures", "availability", "settings"] as const;
-type Tab = (typeof TABS)[number];
+type Tab = "candidatures" | "availability" | "composition" | "room" | "settings";
+const OPEN_TABS: readonly Tab[] = ["candidatures", "availability", "settings"];
+const LOCKED_TABS: readonly Tab[] = ["candidatures", "availability", "composition", "room", "settings"];
 const TAB_KEY = {
   candidatures: "organizer.tab.candidatures",
   availability: "organizer.tab.availability",
+  composition: "organizer.tab.composition",
+  room: "organizer.tab.room",
   settings: "organizer.tab.settings",
 } as const;
 
@@ -93,6 +105,9 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
   const [openId, setOpenId] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [sheetError, setSheetError] = useState<string | null>(null);
+  const [lockOpen, setLockOpen] = useState(false);
+  const [lockError, setLockError] = useState<string | null>(null);
+  const lockTrigger = useRef<HTMLElement | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
   /** Faux si `saveOrganizerLink` n'a pas pu écrire : ce navigateur ne gardera pas le lien. */
@@ -177,6 +192,7 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
     busyRef.current = false;
     clearFresh();
     setOpenId(null);
+    setLockOpen(false);
     setGridChoice(INITIAL_GRID_CHOICE);
     setPending(null);
     setSheetError(null);
@@ -250,6 +266,7 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
       if (api.code && GONE.has(api.code)) {
         stopRef.current();
         setOpenId(null);
+        setLockOpen(false);
         setGone(true);
         setView(null);
         if (isDeadLinkCode(api.code)) forgetSecret(secret);
@@ -259,6 +276,7 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
         // L'état a changé (annulé, verrouillé, retirée, hors du raid) : on ferme et on relit.
         setActionError(errorText(api.code));
         setOpenId(null);
+        setLockOpen(false);
         reloadRef.current();
         errorAt.current = issued.current;
         return { ok: false, handled: true, code: api.code, fields: api.fields };
@@ -284,10 +302,46 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
     addSlot: (slot) => command("addSlot", () => addSlot(secret, slot)),
     removeSlot: (slotId) => command("removeSlot", () => removeSlot(secret, slotId)),
     cancel: () => command("cancel", () => cancelEvent(secret)),
+    unlock: () => command("unlock", () => unlockEvent(secret)),
   };
 
+  function openLock(from: HTMLButtonElement) {
+    lockTrigger.current = from;
+    setLockError(null);
+    setActionError(null);
+    setLockOpen(true);
+  }
+
+  /** Rend les erreurs de champ d'un refus, que la feuille applique (créneau commencé). */
+  async function lock(slotIds: string[]): Promise<Fields> {
+    setLockError(null);
+    const outcome = await command("lock", () => lockEvent(secret, slotIds));
+    if (outcome.ok) {
+      setLockOpen(false);
+      return {};
+    }
+    // Réseau, quota, liste refusée : la feuille reste ouverte avec l'erreur.
+    if (!outcome.handled) setLockError(errorText(outcome.code));
+    return outcome.fields;
+  }
+
+  const status = view?.event.status;
+  const TABS = status === "locked" ? LOCKED_TABS : OPEN_TABS;
+  // Onglet que la vue dit absent (déverrouillage, relu ou pas) : l'affichage revient sur
+  // Disponibilités. Sans vue (chargement), le choix est gardé tel quel.
+  const shownTab: Tab = view && !TABS.includes(tab) ? "availability" : tab;
+  useEffect(() => {
+    // Le repli devient le choix : un reverrouillage ne ramène pas l'onglet disparu.
+    if (shownTab !== tab) setTab(shownTab);
+  }, [shownTab, tab]);
+  // Raid qui n'est plus `open` (verrouillé ailleurs, annulé) : la feuille n'a plus d'objet.
+  const lockShown = lockOpen && status === "open";
+  useEffect(() => {
+    if (lockOpen && view && status !== "open") setLockOpen(false);
+  }, [lockOpen, view, status]);
+
   function onTabKey(e: KeyboardEvent<HTMLButtonElement>) {
-    const i = TABS.indexOf(tab);
+    const i = TABS.indexOf(shownTab);
     const next =
       e.key === "ArrowRight"
         ? TABS[(i + 1) % TABS.length]
@@ -346,13 +400,13 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
             type="button"
             role="tab"
             id={tabId(id)}
-            aria-selected={tab === id}
-            aria-controls={tab === id ? panelId(id) : undefined}
-            tabIndex={tab === id ? 0 : -1}
+            aria-selected={shownTab === id}
+            aria-controls={shownTab === id ? panelId(id) : undefined}
+            tabIndex={shownTab === id ? 0 : -1}
             onClick={() => setTab(id)}
             onKeyDown={onTabKey}
             // Largeur selon le libellé ; à 320 px, un libellé passe sur deux lignes plutôt que de déborder.
-            className={`min-h-tap min-w-0 flex-auto border-b-2 px-1 text-center text-label [overflow-wrap:anywhere] hyphens-auto ${tab === id ? "border-accent text-ink-primary" : "border-transparent text-ink-secondary"}`}
+            className={`min-h-tap min-w-0 flex-auto border-b-2 px-1 text-center text-label [overflow-wrap:anywhere] hyphens-auto ${shownTab === id ? "border-accent text-ink-primary" : "border-transparent text-ink-secondary"}`}
           >
             {t(TAB_KEY[id])}
           </button>
@@ -375,8 +429,8 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
         </p>
       )}
 
-      <div role="tabpanel" id={panelId(tab)} aria-labelledby={tabId(tab)} className="mt-2">
-        {tab === "candidatures" ? (
+      <div role="tabpanel" id={panelId(shownTab)} aria-labelledby={tabId(shownTab)} className="mt-2">
+        {shownTab === "candidatures" ? (
           view.candidatures.length === 0 ? (
             <p className="mt-4 text-body text-ink-secondary">{t("organizer.empty")}</p>
           ) : (
@@ -392,7 +446,7 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
               ))}
             </ul>
           )
-        ) : tab === "availability" ? (
+        ) : shownTab === "availability" ? (
           <AvailabilityGrid
             view={view}
             reference={reference}
@@ -402,7 +456,13 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
             choice={gridChoice}
             onChoice={onGridChoice}
             headingRef={gridHeading}
+            onLock={openLock}
+            busy={pending !== null}
           />
+        ) : shownTab === "composition" ? (
+          <GroupList view={view} title={t("organizer.tab.composition")} testId="composition" />
+        ) : shownTab === "room" ? (
+          <GroupList view={view} title={t("organizer.tab.room")} testId="room" />
         ) : (
           <>
             {/* Changer d'appareil : copier ce lien, le coller ailleurs (EXPERIENCE.md *Liens et appareils*). */}
@@ -445,6 +505,19 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
         )}
       </div>
 
+      {lockShown && (
+        <LockSheet
+          view={view}
+          reference={reference}
+          now={deps.now}
+          busy={pending === "lock"}
+          error={lockError}
+          onLock={lock}
+          onClose={() => setLockOpen(false)}
+          trigger={lockTrigger}
+          fallbackFocus={gridHeading}
+        />
+      )}
       {open && (
         <CandidatureSheet
           candidature={open}
@@ -458,7 +531,7 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
           onClose={() => setOpenId(null)}
           trigger={trigger}
           // Ligne de la grille sortie de la vue (filtre) : le focus revient au titre du panneau.
-          fallbackFocus={tab === "availability" ? gridHeading : heading}
+          fallbackFocus={shownTab === "availability" ? gridHeading : heading}
         />
       )}
     </main>

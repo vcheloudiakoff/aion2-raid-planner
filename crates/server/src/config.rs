@@ -6,6 +6,9 @@
 use std::fmt;
 use std::time::Duration;
 
+use domain::reference::ReferenceSet;
+use domain::room::RoomTemplate;
+
 /// Port d'écoute du conteneur, toujours 8080 (AD-8) ; `PORT` ne règle que le port hôte du compose.
 pub const LISTEN_PORT: u16 = 8080;
 
@@ -26,6 +29,9 @@ pub struct Config {
     pub rate_write: Rate,
     pub rate_read: Rate,
     pub rust_log: String,
+    /// Gabarit du nom de salle (AD-18), `{label}-{code}` par défaut. Sa longueur se vérifie contre
+    /// `room_label_max` de la référence, au démarrage, dès qu'un jeu est chargé.
+    pub room_name_template: RoomTemplate,
 }
 
 /// Clé HMAC du jeton de formulaire, au moins 32 octets ; jamais affichée.
@@ -184,6 +190,13 @@ impl Config {
                 .then(|| v.to_owned())
         })?;
 
+        let room_name_template = parse_or(
+            get("ROOM_NAME_TEMPLATE"),
+            "ROOM_NAME_TEMPLATE",
+            RoomTemplate::default(),
+            |v| RoomTemplate::parse(v).ok(),
+        )?;
+
         Ok(Self {
             port,
             public_base_url,
@@ -198,7 +211,19 @@ impl Config {
             rate_write,
             rate_read,
             rust_log,
+            room_name_template,
         })
+    }
+}
+
+/// Le nom de salle le plus long que le gabarit compose tient dans `room_label_max + 5` du jeu de
+/// référence (AD-18). Vérifié au démarrage et à chaque rechargement ; l'erreur ne nomme que la
+/// variable.
+pub fn check_room_template(template: &RoomTemplate, set: &ReferenceSet) -> Result<(), ConfigError> {
+    if template.fits(set.room_label_max) {
+        Ok(())
+    } else {
+        Err(ConfigError::Invalid("ROOM_NAME_TEMPLATE"))
     }
 }
 
@@ -305,6 +330,10 @@ mod tests {
             }
         );
         assert_eq!(c.rust_log, "info");
+        assert_eq!(
+            c.room_name_template,
+            RoomTemplate::parse("{label}-{code}").unwrap()
+        );
     }
 
     #[test]
@@ -317,6 +346,7 @@ mod tests {
             ("MIN_SUBMIT_DELAY_MS", "0"),
             ("RATE_READ", "10/s"),
             ("RUST_LOG", "warn,server=info"),
+            ("ROOM_NAME_TEMPLATE", "{code} {label}"),
         ]);
         let c = load(&vars).unwrap();
         assert_eq!(c.port, 9000);
@@ -331,6 +361,10 @@ mod tests {
             }
         );
         assert_eq!(c.rust_log, "warn,server=info");
+        assert_eq!(
+            domain::room::compose(&c.room_name_template, "LUDRA", "K7Q2"),
+            "K7Q2 LUDRA"
+        );
     }
 
     #[test]
@@ -387,6 +421,10 @@ mod tests {
             ("RUST_LOG", "warn,server=trace"),
             ("RUST_LOG", "server=DEBUG"),
             ("RUST_LOG", "server"),
+            ("ROOM_NAME_TEMPLATE", "{label}-{code} {cp}+"),
+            ("ROOM_NAME_TEMPLATE", "{label}"),
+            ("ROOM_NAME_TEMPLATE", "{label}-{code}-{code}"),
+            ("ROOM_NAME_TEMPLATE", "{label}é{code}"),
         ] {
             let mut vars: Vec<(&str, &str)> =
                 minimal().into_iter().filter(|(k, _)| *k != name).collect();
@@ -409,6 +447,22 @@ mod tests {
             load(&vars).unwrap().min_submit_delay,
             Duration::from_millis(3_599_999)
         );
+    }
+
+    #[test]
+    fn the_room_template_must_fit_the_reference() {
+        let mut set = crate::infra::reference::embedded().unwrap();
+        set.room_label_max = 8;
+        let fits = RoomTemplate::parse("{label}-{code}").unwrap();
+        assert_eq!(check_room_template(&fits, &set), Ok(()));
+        let long = RoomTemplate::parse("RAID-{label}-{code}").unwrap();
+        let err = check_room_template(&long, &set).unwrap_err();
+        assert_eq!(err, ConfigError::Invalid("ROOM_NAME_TEMPLATE"));
+        assert!(err.to_string().contains("ROOM_NAME_TEMPLATE"));
+        assert!(!err.to_string().contains("RAID"));
+        // Un `room_label_max` plus court au rechargement peut faire sortir un gabarit de la marge.
+        let label_twice = RoomTemplate::parse("{label}{code}").unwrap();
+        assert_eq!(check_room_template(&label_twice, &set), Ok(()));
     }
 
     #[test]

@@ -177,6 +177,31 @@ async fn label_change_is_served_after_poll_without_restart() {
     assert_eq!(res.status(), StatusCode::OK);
 }
 
+#[test]
+fn a_reload_the_room_template_no_longer_fits_keeps_the_previous_set() {
+    let dir = TempDir::new("ref-room-template");
+    copy_repo_reference(&dir.0);
+    let store = ReferenceStore::new();
+    let mut loader = Loader::new(&dir.0, store.clone());
+    assert_eq!(loader.poll(), PollOutcome::Loaded);
+    assert_eq!(store.get().unwrap().room_label_max, 8);
+    // 9 + 4 = 13 caractères : tient dans `room_label_max + 5` tant que le maximum vaut 8 ou plus.
+    loader.guard_room_template(domain::room::RoomTemplate::parse("RAIDROOM-{code}").unwrap());
+
+    rewrite(&dir.0, "instances.toml", |t| {
+        t.replacen("room_label_max = 8", "room_label_max = 7", 1)
+    });
+    assert_eq!(loader.poll(), PollOutcome::Failed { logged: true });
+    assert_eq!(loader.poll(), PollOutcome::Failed { logged: false });
+    assert_eq!(store.get().unwrap().room_label_max, 8);
+
+    rewrite(&dir.0, "instances.toml", |t| {
+        t.replacen("room_label_max = 7", "room_label_max = 9", 1)
+    });
+    assert_eq!(loader.poll(), PollOutcome::Loaded);
+    assert_eq!(store.get().unwrap().room_label_max, 9);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reload_task_picks_up_changes_on_its_own() {
     let dir = TempDir::new("ref-task");

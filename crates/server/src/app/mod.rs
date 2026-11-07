@@ -7,6 +7,7 @@ pub mod tasks;
 
 use std::sync::Arc;
 
+use domain::room::RoomTemplate;
 use sqlx::migrate::Migrator;
 
 use crate::config::Config;
@@ -31,6 +32,8 @@ pub struct AppState {
     pub limits: Arc<Limits>,
     /// Émetteur et vérificateur du jeton de formulaire (AD-7).
     pub form_tokens: Arc<FormTokens>,
+    /// Gabarit du nom de salle (`ROOM_NAME_TEMPLATE`, AD-18).
+    pub room_name_template: Arc<RoomTemplate>,
 }
 
 impl AppState {
@@ -54,6 +57,7 @@ impl AppState {
             migrator: &MIGRATOR,
             limits,
             form_tokens,
+            room_name_template: Arc::new(config.room_name_template.clone()),
         }
     }
 }

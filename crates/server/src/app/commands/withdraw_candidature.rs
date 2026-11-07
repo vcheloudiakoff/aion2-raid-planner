@@ -1,7 +1,8 @@
 //! `withdraw_candidature` (CAP-4) : le participant retire sa candidature, sous son lien `/p/`.
 //! `pending` ou `accepted` → `withdrawn`, terminal, en `open` comme en `locked` (AD-4). Sans jeton de
-//! formulaire (AD-7). Règles d'état vérifiées dans la transaction après relecture (AD-16) ; la vue
-//! participant est relue avant le commit. Ni pseudo ni secret journalisé (AD-15).
+//! formulaire (AD-7). Règles d'état vérifiées dans la transaction après relecture (AD-16) ; le
+//! placement de la candidature est retiré dans la même transaction (AD-4) ; la vue participant est
+//! relue avant le commit. Ni pseudo ni secret journalisé (AD-15).
 
 use domain::Timestamp;
 use domain::candidature::{CandidatureStatus, ParticipantAction, participant_may};
@@ -12,7 +13,7 @@ use crate::app::AppState;
 use crate::app::queries::participant_view;
 use crate::http::dto::ParticipantView;
 use crate::http::errors::{Code, Problem};
-use crate::infra::{candidatures, events};
+use crate::infra::{candidatures, events, groups};
 
 /// `event_id` et `candidature_id` viennent de la ligne du lien participant.
 pub async fn withdraw_candidature(
@@ -77,7 +78,8 @@ async fn write(
         .await?
         .ok_or_else(|| refused(Code::AuthNotFound))?;
     participant_may(event.0, current.status, ParticipantAction::Withdraw).map_err(refused)?;
-    // Aucune ligne `assignments` avant l'epic 3 : rien d'autre à retirer ici.
+    // Le retrait emporte le placement dans la même transaction (AD-4).
+    groups::delete_assignment(&mut tx, candidature_id).await?;
     candidatures::set_status(&mut tx, candidature_id, CandidatureStatus::Withdrawn, now).await?;
     let view = participant_view::load(&mut tx, reference, event_id, candidature_id)
         .await?

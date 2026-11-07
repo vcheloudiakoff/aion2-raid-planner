@@ -9,7 +9,9 @@
 //   disparaît ;
 // - pied, puces et couverture comptent les seules `accepted`, calculés par le serveur
 //   (`OrganizerEvent.slots`) : le filtre ne les change jamais.
-// Aucune cellule n'est cliquable ; l'en-tête de ligne ouvre la feuille de la candidature.
+// Aucune cellule n'est cliquable ; l'en-tête de ligne ouvre la feuille de la candidature. En `open`,
+// le bouton principal « Verrouiller » ouvre la feuille de verrouillage de la page (désactivé, avec sa
+// raison, sans créneau à venir) ; en `locked` comme en `cancelled`, la grille est en lecture seule.
 
 import { useEffect, useId, useState, type RefObject } from "react";
 import { labelOf } from "../api/reference";
@@ -129,9 +131,24 @@ interface Props {
   onChoice: (patch: Partial<GridChoice>) => void;
   /** Titre du panneau : le focus y revient quand la ligne qui a ouvert la feuille a disparu. */
   headingRef?: RefObject<HTMLHeadingElement | null>;
+  /** Ouvre la feuille Verrouiller ; le bouton n'existe qu'en `open`. */
+  onLock?: (trigger: HTMLButtonElement) => void;
+  /** Une commande est en vol : rien ne part en attendant. */
+  busy?: boolean;
 }
 
-export function AvailabilityGrid({ view, reference, now, fresh, onOpen, choice, onChoice, headingRef }: Props) {
+export function AvailabilityGrid({
+  view,
+  reference,
+  now,
+  fresh,
+  onOpen,
+  choice,
+  onChoice,
+  headingRef,
+  onLock,
+  busy = false,
+}: Props) {
   const lang = useLang();
   const ids = useId();
   const wide = useMedia(MATRIX_MEDIA);
@@ -176,10 +193,12 @@ export function AvailabilityGrid({ view, reference, now, fresh, onOpen, choice, 
   }, [selectedId, picked, onChoice]);
   const selected = slots.find((s) => s.id === selectedId) ?? null;
   const stats = new Map(view.slots.map((s) => [s.slotId, s]));
-  const statOf = (id: string): OrganizerSlot => stats.get(id) ?? { slotId: id, availableAccepted: 0, coverage: {} };
+  const statOf = (id: string): OrganizerSlot => stats.get(id) ?? { slotId: id, availableAccepted: 0, coverage: {}, hasGroups: false };
   const isPast = (s: PublicSlot) => Date.parse(s.startsAt) <= nowMs;
 
   const reasonId = `${ids}-reason`;
+  const lockReasonId = `${ids}-lock-reason`;
+  const canLockSomething = slots.some((s) => !isPast(s));
   const reason = [tooMany && t("grid.reason.slots"), !wide && t("grid.reason.narrow")].filter(Boolean).join(" · ");
   const segment = "min-h-tap flex-1 px-2 text-label";
 
@@ -199,6 +218,27 @@ export function AvailabilityGrid({ view, reference, now, fresh, onOpen, choice, 
         {t("organizer.tab.availability")}
       </h2>
       <p className="text-meta text-ink-secondary">{t("event.timezone", { zone: timeZoneLabel(lang) })}</p>
+
+      {onLock && view.event.status === "open" && (
+        <div className="mt-3">
+          <button
+            type="button"
+            data-testid="lock-open"
+            aria-haspopup="dialog"
+            disabled={!canLockSomething || busy}
+            aria-describedby={canLockSomething ? undefined : lockReasonId}
+            onClick={(e) => onLock(e.currentTarget)}
+            className="min-h-tap w-full rounded-md bg-accent px-4 text-label text-on-accent disabled:bg-surface-sunken disabled:text-ink-disabled"
+          >
+            {t("lock.open")}
+          </button>
+          {!canLockSomething && (
+            <p id={lockReasonId} className="mt-1 text-meta text-ink-secondary">
+              {t("lock.noUpcoming")}
+            </p>
+          )}
+        </div>
+      )}
 
       <div role="group" aria-label={t("grid.view")} className="mt-3 flex overflow-hidden rounded-md border border-border">
         <button

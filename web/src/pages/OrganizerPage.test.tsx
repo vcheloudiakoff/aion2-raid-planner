@@ -928,6 +928,116 @@ describe("availability tab", () => {
   });
 });
 
+describe("locked tabs", () => {
+  const groups: OrganizerEvent["groups"] = [
+    { id: "g1", slotId: "slot_a", occurrence: 1, retained: true, parties: 2, partySize: 5, roomLabel: "I1", roomName: "I1-K7Q2" },
+    // En sommeil : ni numéro ni ligne.
+    { id: "g2", slotId: "slot_a", occurrence: 2, retained: false, parties: 2, partySize: 5, roomLabel: "I1", roomName: "I1-AAAA" },
+    { id: "g3", slotId: "slot_b", occurrence: 1, retained: true, parties: 2, partySize: 5, roomLabel: "I1", roomName: "I1-M3NP" },
+  ];
+  const locked = () => viewWith({}, { status: "locked" }, { groups });
+  const opened = () => viewWith({}, {}, { groups });
+  const labels = () => tabs().map((t) => t.textContent);
+
+  it("adds Composition and Salle between Disponibilités and Réglages on a locked raid only", async () => {
+    serve(() => json(locked()));
+    await render();
+    expect(labels()).toEqual(["Candidatures", "Disponibilités", "Composition", "Salle", "Réglages"]);
+    // Le motif tablist couvre les cinq onglets.
+    key(tabs()[0], "End");
+    expect(tabs()[4].getAttribute("aria-selected")).toBe("true");
+    key(tabs()[4], "ArrowLeft");
+    expect(tabs()[3].getAttribute("aria-selected")).toBe("true");
+    m.unmount();
+    for (const status of ["open", "cancelled"] as const) {
+      serve(() => json(viewWith({}, { status }, { groups })));
+      await render();
+      expect(labels(), status).toEqual(["Candidatures", "Disponibilités", "Réglages"]);
+      m.unmount();
+    }
+    m = mount(<div />);
+  });
+
+  it("list the retained groups G1… in Composition and Salle, without any action", async () => {
+    serve(() => json(locked()));
+    await render();
+    for (const [i, id] of [
+      [2, "composition"],
+      [3, "room"],
+    ] as const) {
+      click(tabs()[i]);
+      const panel = q<HTMLElement>(`[data-testid="${id}"]`)!;
+      expect(panel.querySelector("h2")!.textContent).toBe(tabs()[i].textContent);
+      expect([...panel.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+        "G1 · mer. 05:00 · I1-K7Q2",
+        "G2 · ven. 05:00 · I1-M3NP",
+      ]);
+      // Le groupe en sommeil n'a pas de ligne, mais il est compté.
+      expect(q(`[data-testid="${id}-sleeping"]`)!.textContent).toBe("1 groupe en sommeil, repris s'il est reverrouillé.");
+      expect(panel.querySelectorAll("button, input, a")).toHaveLength(0);
+    }
+  });
+
+  it("go back to Disponibilités when the current tab disappears on refresh", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    let current = locked();
+    serve(() => json(current));
+    await render();
+    click(tabs()[3]);
+    expect(q('[data-testid="room"]')).not.toBeNull();
+    current = opened();
+    await tick();
+    expect(labels()).toEqual(["Candidatures", "Disponibilités", "Réglages"]);
+    expect(tabs()[1].getAttribute("aria-selected")).toBe("true");
+    expect(q('[data-testid="availability"]')).not.toBeNull();
+    // Reverrouillé : l'onglet courant reste Disponibilités.
+    current = locked();
+    await tick();
+    expect(tabs()[1].getAttribute("aria-selected")).toBe("true");
+    // Réglages survit au changement d'état.
+    click(tabs()[4]);
+    current = opened();
+    await tick();
+    expect(tabs()[2].textContent).toBe("Réglages");
+    expect(tabs()[2].getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("offer Verrouiller in the grid of an open raid only", async () => {
+    serve(() => json(opened()));
+    await render();
+    click(tabs()[1]);
+    expect(q('[data-testid="lock-open"]')!.textContent).toBe("Verrouiller");
+    m.unmount();
+    for (const status of ["locked", "cancelled"] as const) {
+      serve(() => json(viewWith({}, { status }, { groups })));
+      await render();
+      click(tabs()[1]);
+      expect(q('[data-testid="availability"]'), status).not.toBeNull();
+      expect(q('[data-testid="lock-open"]'), status).toBeNull();
+      m.unmount();
+    }
+    m = mount(<div />);
+  });
+
+  it("close an open lock sheet when a refresh says the raid is locked or cancelled", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    for (const status of ["locked", "cancelled"] as const) {
+      let current = opened();
+      const calls = serve(() => json(current));
+      await render();
+      click(tabs()[1]);
+      click(q<HTMLButtonElement>('[data-testid="lock-open"]')!);
+      expect(document.querySelector('[data-testid="lock-sheet"]'), status).not.toBeNull();
+      current = viewWith({}, { status }, { groups });
+      await tick();
+      expect(document.querySelector('[data-testid="lock-sheet"]'), status).toBeNull();
+      expect(posts(calls), status).toEqual([]);
+      m.unmount();
+    }
+    m = mount(<div />);
+  });
+});
+
 describe("local links", () => {
   it("saves the organizer link after the first read and keeps an existing direct link", async () => {
     localStorage.setItem(LINKS_KEY, JSON.stringify({ [EVENT_ID]: { join: JOIN, participants: {} } }));

@@ -2,7 +2,8 @@
 //! lien Discord, les bornes par classe et toutes les candidatures, dans l'ordre de création, avec
 //! `Pseudo[SRV]` composé ici et les doublons signalés (AD-4 *Données exposées*, AD-6). Rien n'est
 //! dédoublonné ni réordonné. Par créneau, les disponibles parmi les `accepted` et leur couverture
-//! par classe (`domain::counts::slot_coverage`).
+//! par classe (`domain::counts::slot_coverage`), et s'il porte un groupe. Les groupes, en sommeil
+//! compris, triés par début de créneau puis par occurrence.
 
 use domain::counts::{CoverageInput, role_of, slot_coverage};
 use domain::pseudo_srv::{duplicates, pseudo_srv};
@@ -12,10 +13,10 @@ use sqlx::SqliteConnection;
 use crate::app::AppState;
 use crate::app::queries::public_event;
 use crate::http::dto::{
-    Availability, ClassBound, OrganizerCandidature, OrganizerEvent, OrganizerSlot,
+    Availability, ClassBound, OrganizerCandidature, OrganizerEvent, OrganizerGroup, OrganizerSlot,
 };
 use crate::http::errors::{Code, Problem};
-use crate::infra::{candidatures, events};
+use crate::infra::{candidatures, events, groups};
 
 /// Lecture sur le pool de lecture, dans une transaction. Un événement disparu (purge) donne `auth.not_found` : pour le
 /// porteur, le lien ne mène plus à rien.
@@ -55,6 +56,7 @@ pub async fn load(
     };
     let discord_url = events::discord_url(conn, event_id).await?.flatten();
     let rows = candidatures::list(conn, event_id).await?;
+    let groups = groups::list(conn, event_id).await?;
     let keys: Vec<_> = rows
         .iter()
         .map(|c| (c.pseudo.as_str(), c.server.as_str(), c.status))
@@ -84,12 +86,26 @@ pub async fn load(
         slot_coverage(&slot_ids, &bounded, &inputs)
             .into_iter()
             .map(|s| OrganizerSlot {
+                has_groups: groups.iter().any(|g| g.slot_id == s.slot_id),
                 slot_id: s.slot_id,
                 available_accepted: s.available_accepted,
                 coverage: s.coverage,
             })
             .collect()
     };
+    let groups = groups
+        .into_iter()
+        .map(|g| OrganizerGroup {
+            id: g.id,
+            slot_id: g.slot_id,
+            occurrence: g.occurrence,
+            retained: g.retained,
+            parties: g.parties,
+            party_size: g.party_size,
+            room_label: g.room_label,
+            room_name: g.room_name,
+        })
+        .collect();
     let candidatures = rows
         .into_iter()
         .zip(flags)
@@ -132,6 +148,7 @@ pub async fn load(
         discord_url,
         class_bounds,
         slots,
+        groups,
         candidatures,
     }))
 }

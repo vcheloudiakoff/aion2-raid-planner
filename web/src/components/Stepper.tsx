@@ -14,9 +14,11 @@ interface Props {
   label: string;
   invalid?: boolean;
   describedBy?: string;
+  /** Pendant un envoi : ni bouton ni saisie. */
+  disabled?: boolean;
 }
 
-export function Stepper({ value, min, max, onChange, label, invalid, describedBy }: Props) {
+export function Stepper({ value, min, max, onChange, label, invalid, describedBy, disabled = false }: Props) {
   useLang();
   const [draft, setDraft] = useState<string | null>(null);
   const set = (n: number) => {
@@ -29,7 +31,7 @@ export function Stepper({ value, min, max, onChange, label, invalid, describedBy
       <button
         type="button"
         aria-label={t("stepper.decrease", { label })}
-        disabled={value <= min}
+        disabled={disabled || value <= min}
         onClick={() => set(value - 1)}
         className={button}
       >
@@ -41,6 +43,7 @@ export function Stepper({ value, min, max, onChange, label, invalid, describedBy
         min={min}
         max={max}
         aria-label={label}
+        disabled={disabled}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
         value={draft ?? String(value)}
@@ -56,7 +59,7 @@ export function Stepper({ value, min, max, onChange, label, invalid, describedBy
       <button
         type="button"
         aria-label={t("stepper.increase", { label })}
-        disabled={value >= max}
+        disabled={disabled || value >= max}
         onClick={() => set(value + 1)}
         className={button}
       >

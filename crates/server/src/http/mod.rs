@@ -99,6 +99,8 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
             "/organizer/cancellation",
             post(organizer::post_cancellation),
         )
+        .route("/organizer/lock", post(organizer::post_lock))
+        .route("/organizer/unlock", post(organizer::post_unlock))
         .route_layer(middleware::from_fn_with_state(
             Guard::new(&state.limits, RouteClass::Write),
             limits::enforce,

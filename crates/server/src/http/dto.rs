@@ -438,7 +438,7 @@ pub struct Withdrawal {}
 
 /// Réponse de `GET /api/organizer` et des commandes de l'organisateur, sous son lien `/o/` : tout
 /// le `PublicEvent`, plus ce que seul l'organisateur voit (AD-4 *Données exposées*). `discordUrl`
-/// n'existe que si l'événement a un lien. `slot.hasGroups` arrive avec les groupes (epic 3).
+/// n'existe que si l'événement a un lien.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizerEvent {
@@ -449,19 +449,41 @@ pub struct OrganizerEvent {
     pub class_bounds: BTreeMap<String, ClassBound>,
     /// Une entrée par créneau, dans l'ordre de `event.slots` : disponibles parmi les `accepted`.
     pub slots: Vec<OrganizerSlot>,
+    /// Groupes de l'événement, en sommeil compris (`retained` faux), triés par début de créneau
+    /// puis par `occurrence`. Toujours présent, vide avant le premier verrouillage.
+    pub groups: Vec<OrganizerGroup>,
     /// Ordre de création (`created_at` puis `id`), jamais réordonnées.
     pub candidatures: Vec<OrganizerCandidature>,
 }
 
 /// Couverture d'un créneau par les candidatures `accepted` (jamais `pending`, `rejected` ni
 /// `withdrawn`) : leur nombre, et leur nombre par classe. `coverage` a une entrée par classe bornée
-/// (zéros compris), plus toute classe `accepted` sans borne.
+/// (zéros compris), plus toute classe `accepted` sans borne. `hasGroups` : un groupe existe sur ce
+/// créneau, même en sommeil ; le supprimer le perdrait (AD-4 *Mutabilité*).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizerSlot {
     pub slot_id: String,
     pub available_accepted: u32,
     pub coverage: BTreeMap<String, u32>,
+    pub has_groups: bool,
+}
+
+/// Un groupe vu par l'organisateur (AD-4 *Verrouillage*) : son créneau et son rang d'occurrence,
+/// `retained` s'il fait partie du verrouillage courant, la disposition et le libellé figés à sa
+/// création, et son nom de salle composé par le serveur (AD-18). Le libellé « G1 » est calculé par
+/// le client.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrganizerGroup {
+    pub id: String,
+    pub slot_id: String,
+    pub occurrence: u32,
+    pub retained: bool,
+    pub parties: u32,
+    pub party_size: u32,
+    pub room_label: String,
+    pub room_name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -545,3 +567,16 @@ pub struct SlotRemoval {
 /// Corps de `POST /api/organizer/cancellation` : vide, `{}`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Cancellation {}
+
+/// Corps de `POST /api/organizer/lock` : les créneaux retenus, un id par groupe, doublons permis
+/// (deux groupes sur le même créneau). Chaque id vise un créneau que la commande cherche dans
+/// l'événement du lien, jamais ailleurs.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockEvent {
+    pub slot_ids: Vec<String>,
+}
+
+/// Corps de `POST /api/organizer/unlock` : vide, `{}`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Unlock {}

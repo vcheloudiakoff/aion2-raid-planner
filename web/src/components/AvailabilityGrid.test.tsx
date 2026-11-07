@@ -96,7 +96,7 @@ function withSlots(n: number): OrganizerEvent {
   return {
     ...organizerEvent,
     event: { ...organizerEvent.event, slots },
-    slots: slots.map((s) => ({ slotId: s.id, availableAccepted: 0, coverage: { c1: 0, c2: 0 } })),
+    slots: slots.map((s) => ({ slotId: s.id, availableAccepted: 0, coverage: { c1: 0, c2: 0 }, hasGroups: false })),
   };
 }
 

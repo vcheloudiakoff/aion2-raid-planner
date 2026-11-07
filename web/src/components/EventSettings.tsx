@@ -5,7 +5,9 @@
 // - Les réglages toujours modifiables : note, lien Discord, « Lister publiquement », CP minimum et
 //   bornes par classe, enregistrés d'un seul bouton principal « Enregistrer », désactivé avec sa
 //   raison tant que rien n'a changé ou que la saisie est invalide.
-// - « Créneaux », en `open` seulement : suppression (confirmée si des joueurs l'ont coché) et ajout.
+// - « Créneaux », en `open` seulement : suppression (confirmée si des joueurs l'ont coché ou si des
+//   groupes y sont, en nommant la perte) et ajout. En `locked`, « Déverrouiller » à la place, tant
+//   qu'un créneau est à venir, après une confirmation.
 // - « Dupliquer » : `/new` prérempli depuis la vue enregistrée, sauf les dates (`duplicateDraft`).
 // - « Annuler le raid », confirmé, en bas.
 //
@@ -47,7 +49,7 @@ import { FactionDot, Summary } from "./EventSummary";
 import { SlotInputs } from "./SlotEditor";
 
 /** Commande de cet onglet. */
-export type SettingsCommand = "settings" | "addSlot" | "removeSlot" | "cancel";
+export type SettingsCommand = "settings" | "addSlot" | "removeSlot" | "cancel" | "unlock";
 
 /** Issue d'une commande, rendue par la page. `handled` : la page a déjà traité le refus (lien mort,
  * code d'état affiché et vue relue, commande déjà en vol) ; sinon l'onglet le montre près du geste. */
@@ -60,6 +62,7 @@ export interface SettingsActions {
   addSlot: (slot: NewSlot) => Promise<CommandOutcome>;
   removeSlot: (slotId: string) => Promise<CommandOutcome>;
   cancel: () => Promise<CommandOutcome>;
+  unlock: () => Promise<CommandOutcome>;
 }
 
 interface Props {
@@ -183,10 +186,13 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
   const [addDuration, setAddDuration] = useState("");
   const [addDurationBad, setAddDurationBad] = useState(false);
   const [slotError, setSlotError] = useState<string | null>(null);
-  const [removing, setRemoving] = useState<{ slot: PublicSlot; ticked: number } | null>(null);
+  const [removing, setRemoving] = useState<{ slot: PublicSlot; ticked: number; groups: number } | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [confirmUnlock, setConfirmUnlock] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const unlockTrigger = useRef<HTMLButtonElement>(null);
   const removeTrigger = useRef<HTMLElement | null>(null);
   const cancelTrigger = useRef<HTMLButtonElement>(null);
   const slotsHeading = useRef<HTMLHeadingElement>(null);
@@ -204,6 +210,11 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
   useEffect(() => {
     if (removing && (!open || !view.event.slots.some((s) => s.id === removing.slot.id))) setRemoving(null);
   }, [removing, open, view]);
+  // Déverrouiller : en `locked`, tant qu'un créneau est à venir (AD-4).
+  const canUnlock = view.event.status === "locked" && view.event.slots.some((s) => Date.parse(s.startsAt) > now());
+  useEffect(() => {
+    if (confirmUnlock && !canUnlock) setConfirmUnlock(false);
+  }, [confirmUnlock, canUnlock]);
 
   const frozen = view.candidatures.length > 0;
   // Champs figés : la vue fait foi, quel que soit le brouillon d'avant la première candidature. Des
@@ -310,16 +321,20 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
     view.candidatures.filter((c) => c.status !== "withdrawn" && c.availabilities.some((a) => a.slotId === slotId))
       .length;
 
+  /** Groupes qui partiraient avec le créneau, en sommeil compris, et leurs placements. */
+  const groupsOn = (slotId: string) => view.groups.filter((g) => g.slotId === slotId).length;
+
   function askRemove(slot: PublicSlot, from: HTMLButtonElement) {
     setSlotError(null);
     const ticked = tickedBy(slot.id);
-    if (ticked === 0) {
+    const groups = groupsOn(slot.id);
+    if (ticked === 0 && groups === 0) {
       void remove(slot.id, false);
       return;
     }
     removeTrigger.current = from;
     setRemoveError(null);
-    setRemoving({ slot, ticked });
+    setRemoving({ slot, ticked, groups });
   }
 
   async function remove(slotId: string, confirmed: boolean) {
@@ -342,6 +357,23 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
     if (outcome.ok || outcome.handled) setConfirmCancel(false);
     else setCancelError(errorText(outcome.code));
   }
+
+  async function unlock() {
+    const outcome = await actions.unlock();
+    if (outcome.ok || outcome.handled) setConfirmUnlock(false);
+    else setUnlockError(errorText(outcome.code));
+  }
+
+  /** La perte que nomme la confirmation : groupes et placements d'abord, puis les dispos. */
+  const removalMessage = (r: { ticked: number; groups: number }) =>
+    [
+      r.groups > 0 &&
+        t(r.groups === 1 ? "settings.slot.groups.one" : "settings.slot.groups.other", { count: r.groups }),
+      r.ticked > 0 &&
+        t(r.ticked === 1 ? "settings.slot.ticked.one" : "settings.slot.ticked.other", { count: r.ticked }),
+    ]
+      .filter(Boolean)
+      .join(" ");
 
   const label = labelClass;
   const control = controlClass;
@@ -603,7 +635,26 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
             </div>
           </>
         ) : (
-          <p className="mt-1 text-body text-ink-secondary">{t("settings.locked")}</p>
+          <>
+            <p className="mt-1 text-body text-ink-secondary">{t("settings.locked")}</p>
+            {canUnlock && (
+              <div data-testid="settings-unlock" className="mt-3">
+                <button
+                  ref={unlockTrigger}
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => {
+                    setUnlockError(null);
+                    setConfirmUnlock(true);
+                  }}
+                  className="min-h-tap w-full rounded-md border border-border px-4 text-label text-ink-primary disabled:text-ink-disabled"
+                >
+                  {t("settings.unlock")}
+                </button>
+                <p className="mt-2 text-meta text-ink-secondary">{t("settings.unlockHint")}</p>
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -626,9 +677,7 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
 
       {removing && (
         <ConfirmSheet
-          message={t(removing.ticked === 1 ? "settings.slot.ticked.one" : "settings.slot.ticked.other", {
-            count: removing.ticked,
-          })}
+          message={removalMessage(removing)}
           confirmLabel={t("settings.slot.delete")}
           cancelLabel={t("settings.slot.keep")}
           busyLabel={t("settings.sending")}
@@ -637,6 +686,20 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
           onConfirm={() => void remove(removing.slot.id, true)}
           onClose={() => setRemoving(null)}
           trigger={removeTrigger}
+          fallbackFocus={slotsHeading}
+        />
+      )}
+      {confirmUnlock && (
+        <ConfirmSheet
+          message={t("settings.unlockConfirm")}
+          confirmLabel={t("settings.unlock")}
+          cancelLabel={t("settings.keepLocked")}
+          busyLabel={t("settings.sending")}
+          busy={busy === "unlock"}
+          error={unlockError}
+          onConfirm={() => void unlock()}
+          onClose={() => setConfirmUnlock(false)}
+          trigger={unlockTrigger}
           fallbackFocus={slotsHeading}
         />
       )}

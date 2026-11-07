@@ -4,9 +4,10 @@
 //! Tout se passe dans la transaction (AD-16) : relecture de l'événement et de ses créneaux, règle
 //! d'état, créneau cherché dans l'événement du lien (inconnu ou d'un autre événement :
 //! `slot.not_found`), au moins un créneau gardé, suppression, puis la vue organisateur relue avant
-//! le commit. Un créneau passé se supprime aussi. Ses `availabilities` partent par la cascade
-//! déclarée ; les statuts des candidatures ne changent jamais, et une candidature restée sans
-//! disponibilité est gardée. Aucun groupe avant l'epic 3.
+//! le commit. Un créneau passé se supprime aussi. Ses `availabilities`, ses `groups` (en sommeil
+//! compris) et leurs `assignments` partent par la cascade déclarée : c'est la seule façon de perdre
+//! un groupe (AD-4), et la vue prévient par `slot.hasGroups`. Les statuts des candidatures ne
+//! changent jamais, et une candidature restée sans disponibilité est gardée.
 
 use domain::event::{EventAction, event_may, slot_count_allowed};
 use domain::reference::ReferenceSet;

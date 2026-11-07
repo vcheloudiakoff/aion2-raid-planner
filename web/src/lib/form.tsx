@@ -4,10 +4,12 @@
 
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { Instance } from "../api/types";
-import { hasKey, t, type MessageKey } from "../i18n";
+import { hasKey, t, type MessageKey, type Vars } from "../i18n";
 
 export const NOTE_MAX = 280;
 export const SLOTS_MAX = 14;
+/** Groupes d'un verrouillage, doublons compris : autant que de créneaux (`domain::event`). */
+export const GROUPS_MAX = SLOTS_MAX;
 /** Durée d'un créneau en minutes, bornes du serveur. */
 export const DURATION_MIN = 15;
 export const DURATION_MAX = 720;
@@ -20,10 +22,15 @@ export interface Bound {
 /** Codes d'erreur du serveur par chemin JSON (`slots.2.startsAt`). */
 export type Fields = Record<string, string>;
 
+/** Valeurs des textes d'erreur qui nomment une borne. */
+const ERROR_VARS: Record<string, Vars> = {
+  "event.group_count_out_of_range": { max: GROUPS_MAX },
+};
+
 /** Texte d'un code d'erreur du serveur, repli générique si la locale ne le connaît pas. */
 export function errorText(code: string | undefined): string {
   const key = `errors.${code}`;
-  return code && hasKey(key) ? t(key as MessageKey) : t("common.error");
+  return code && hasKey(key) ? t(key as MessageKey, ERROR_VARS[code]) : t("common.error");
 }
 
 /** Longueur en caractères, comme le serveur la compte. */

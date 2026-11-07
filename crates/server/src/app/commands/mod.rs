@@ -4,20 +4,25 @@
 pub mod add_slot;
 pub mod cancel_event;
 pub mod create_event;
+pub mod lock_event;
 pub mod remove_slot;
 pub mod set_candidature_status;
 pub mod submit_candidature;
+pub mod unlock_event;
 pub mod update_candidature;
 pub mod update_event_settings;
 pub mod withdraw_candidature;
 
 use crate::http::errors::{Code, Problem};
 
-/// Échec d'une commande de l'organisateur sur son événement (réglages, créneaux, annulation) : un
-/// refus rendu tel quel, ou une erreur SQL journalisée puis rendue en 500 sans détail (AD-5).
+/// Échec d'une commande de l'organisateur sur son événement (réglages, créneaux, annulation,
+/// verrouillage) : un refus rendu tel quel, ou une erreur SQL ou interne journalisée puis rendue en
+/// 500 sans détail (AD-5).
 pub(crate) enum EventWriteError {
     Refused(Problem),
     Db(sqlx::Error),
+    /// Cause fixe, sans donnée : elle part seule dans le journal.
+    Internal(&'static str),
 }
 
 impl From<sqlx::Error> for EventWriteError {
@@ -38,6 +43,10 @@ impl EventWriteError {
             Self::Refused(p) => p,
             Self::Db(e) => {
                 tracing::error!(error = %e, event = event_id, command, "event command failed");
+                Code::ServerInternal.into()
+            }
+            Self::Internal(cause) => {
+                tracing::error!(cause, event = event_id, command, "event command failed");
                 Code::ServerInternal.into()
             }
         }

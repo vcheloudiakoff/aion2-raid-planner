@@ -496,7 +496,7 @@ async fn create_route_is_keyed_and_post_only() {
 }
 
 /// `0002` sur une base de la story 1-7 : les liens restent, le modèle de l'epic 2 arrive sans les
-/// tables de l'epic 3, et supprimer un événement emporte tout ce qui en dépend.
+/// tables de l'epic 3 (versions ≤ 2), et supprimer un événement emporte tout ce qui en dépend.
 #[tokio::test]
 async fn migration_0002_on_a_1_7_base_and_cascade() {
     let db = Db::open(sqlite::shared_memory_options("events_migration"))
@@ -520,7 +520,17 @@ async fn migration_0002_on_a_1_7_base_and_cascade() {
         .await
         .unwrap();
 
-    db.migrate().await.unwrap();
+    let up_to_2: Vec<_> = MIGRATOR
+        .iter()
+        .filter(|m| m.version <= 2)
+        .cloned()
+        .collect();
+    assert_eq!(up_to_2.len(), 2);
+    let v2 = Migrator {
+        migrations: Cow::Owned(up_to_2),
+        ..Migrator::DEFAULT
+    };
+    v2.run(&db.write).await.unwrap();
     assert_eq!(count(&db, "links").await, 1);
     for table in ["groups", "assignments", "confirmations"] {
         let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE name = ?")
@@ -530,6 +540,8 @@ async fn migration_0002_on_a_1_7_base_and_cascade() {
             .unwrap();
         assert_eq!(n, 0, "{table}");
     }
+    // Puis les suivantes, comme au démarrage.
+    db.migrate().await.unwrap();
 
     let state = state(db.clone());
     let router = fixture_router(state.clone());

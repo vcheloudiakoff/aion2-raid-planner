@@ -1,11 +1,12 @@
 // Vue organisateur (CAP-5), sous le lien `/o/<secret>` : lecture, tri des candidatures, réglages,
-// créneaux et annulation. Le secret part en en-tête seulement, jamais dans l'URL ni le corps ; les
+// créneaux, annulation, verrouillage et déverrouillage. Le secret part en en-tête seulement, jamais dans l'URL ni le corps ; les
 // ids (candidature, créneau) vont dans le corps (AD-3). Pas de jeton de formulaire : le secret
 // organisateur suffit (AD-7). Chaque commande rend la vue à jour.
 
 import { getJson, postJson } from "./client";
 import type {
   Decision,
+  LockEvent,
   NewSlot,
   OrganizerEvent,
   SetCandidatureStatus,
@@ -19,6 +20,8 @@ export const SETTINGS_URL = `${ORGANIZER_URL}/settings`;
 export const SLOTS_URL = `${ORGANIZER_URL}/slots`;
 export const SLOT_REMOVAL_URL = `${ORGANIZER_URL}/slot-removal`;
 export const CANCELLATION_URL = `${ORGANIZER_URL}/cancellation`;
+export const LOCK_URL = `${ORGANIZER_URL}/lock`;
+export const UNLOCK_URL = `${ORGANIZER_URL}/unlock`;
 
 export function getOrganizerView(secret: string): Promise<OrganizerEvent> {
   return getJson<OrganizerEvent>(ORGANIZER_URL, { linkSecret: secret });
@@ -49,4 +52,15 @@ export function removeSlot(secret: string, slotId: string): Promise<OrganizerEve
 /** Annule l'événement, pour tout le monde et sans retour. */
 export function cancelEvent(secret: string): Promise<OrganizerEvent> {
   return postJson<OrganizerEvent>(CANCELLATION_URL, {}, { linkSecret: secret });
+}
+
+/** Verrouille l'événement : un groupe par entrée de `slotIds`, doublons répétés. */
+export function lockEvent(secret: string, slotIds: string[]): Promise<OrganizerEvent> {
+  const body: LockEvent = { slotIds };
+  return postJson<OrganizerEvent>(LOCK_URL, body, { linkSecret: secret });
+}
+
+/** Ramène l'événement en préparation ; groupes et noms de salle sont gardés. */
+export function unlockEvent(secret: string): Promise<OrganizerEvent> {
+  return postJson<OrganizerEvent>(UNLOCK_URL, {}, { linkSecret: secret });
 }

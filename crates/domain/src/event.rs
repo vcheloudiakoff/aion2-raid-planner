@@ -5,7 +5,8 @@
 //! `ReferenceSet` une seule fois (AD-6) et, quand il le faut, `now` de l'horloge injectée (AD-11).
 //! Toutes les erreurs de champ sont rendues ensemble, dans l'ordre des champs du formulaire : la
 //! couche `http` prend la première pour `code` et les autres pour `fields`. [`event_may`] porte la
-//! mutabilité d'AD-4 : quel geste l'état de l'événement permet.
+//! mutabilité d'AD-4 : quel geste l'état de l'événement permet. [`validate_lock`] et [`lock_plan`]
+//! portent le verrouillage d'AD-4 : entrées retenues, appariement aux groupes existants.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -595,6 +596,10 @@ pub enum EventAction {
     AddSlot,
     RemoveSlot,
     Cancel,
+    /// `open → locked` : les créneaux retenus deviennent des groupes.
+    Lock,
+    /// `locked → open`, tant qu'un créneau est à venir ([`has_upcoming_slot`]).
+    Unlock,
 }
 
 /// Refus d'un geste de l'organisateur, dans l'ordre où les règles sont vérifiées.
@@ -602,21 +607,143 @@ pub enum EventAction {
 pub enum EventRefusal {
     /// L'événement est annulé : plus aucune écriture, pas même une seconde annulation.
     Closed,
-    /// L'événement est verrouillé : les créneaux ne bougent plus.
+    /// L'événement est verrouillé : les créneaux ne bougent plus, et il ne se reverrouille pas.
     Locked,
+    /// L'événement est en préparation : rien à déverrouiller.
+    NotLocked,
 }
 
 /// Mutabilité d'AD-4, à vérifier après relecture de l'agrégat : un événement `cancelled` refuse
 /// tout ; les réglages et l'annulation valent en `open` comme en `locked` ; l'ajout et la
-/// suppression de créneau en `open` seulement.
+/// suppression de créneau et le verrouillage en `open` seulement ; le déverrouillage en `locked`
+/// seulement.
 pub fn event_may(status: EventStatus, action: EventAction) -> Result<(), EventRefusal> {
     match (status, action) {
         (EventStatus::Cancelled, _) => Err(EventRefusal::Closed),
-        (EventStatus::Locked, EventAction::AddSlot | EventAction::RemoveSlot) => {
-            Err(EventRefusal::Locked)
-        }
+        (
+            EventStatus::Locked,
+            EventAction::AddSlot | EventAction::RemoveSlot | EventAction::Lock,
+        ) => Err(EventRefusal::Locked),
+        (EventStatus::Open, EventAction::Unlock) => Err(EventRefusal::NotLocked),
         (EventStatus::Open | EventStatus::Locked, _) => Ok(()),
     }
+}
+
+/// Nombre de groupes d'un verrouillage, doublons compris `[ASSUMPTION]` : autant que de créneaux
+/// permis.
+pub const GROUPS_MIN: usize = 1;
+pub const GROUPS_MAX: usize = SLOTS_MAX;
+
+/// Vrai si un créneau commence après `now` : le déverrouillage n'est permis qu'à cette condition.
+pub fn has_upcoming_slot(now: Timestamp, starts: &[Timestamp]) -> bool {
+    starts.iter().any(|&s| s > now)
+}
+
+/// Refus d'une liste de créneaux retenus, dans l'ordre où les règles sont vérifiées.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LockError {
+    /// Liste vide ou de plus de [`GROUPS_MAX`] entrées.
+    GroupCountOutOfRange,
+    /// Un id ne désigne aucun créneau de l'événement.
+    SlotNotFound,
+    /// Rangs (dans la liste) des entrées dont le créneau a commencé : chemins `slotIds.N`.
+    SlotInPast(Vec<usize>),
+}
+
+/// Une entrée retenue : le créneau et son rang d'occurrence dans la liste (1 pour la première fois
+/// qu'il y figure, 2 pour la deuxième…). C'est la clé d'appariement d'un groupe (AD-4).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LockEntry {
+    pub slot_id: String,
+    pub occurrence: u32,
+}
+
+/// Vérifie la liste des créneaux retenus contre les créneaux de l'événement (`id`, début) : nombre
+/// d'entrées, appartenance, puis créneaux à venir. Rend les entrées dans l'ordre de la liste, chacune
+/// avec son rang d'occurrence. Les disponibilités ne comptent pas : un groupe incomplet est permis.
+pub fn validate_lock(
+    now: Timestamp,
+    slots: &[(&str, Timestamp)],
+    requested: &[String],
+) -> Result<Vec<LockEntry>, LockError> {
+    if !(GROUPS_MIN..=GROUPS_MAX).contains(&requested.len()) {
+        return Err(LockError::GroupCountOutOfRange);
+    }
+    let mut starts = Vec::with_capacity(requested.len());
+    for id in requested {
+        let start = slots
+            .iter()
+            .find(|(s, _)| s == id)
+            .map(|&(_, start)| start)
+            .ok_or(LockError::SlotNotFound)?;
+        starts.push(start);
+    }
+    let past: Vec<usize> = starts
+        .iter()
+        .enumerate()
+        .filter(|&(_, &start)| start <= now)
+        .map(|(i, _)| i)
+        .collect();
+    if !past.is_empty() {
+        return Err(LockError::SlotInPast(past));
+    }
+    let mut seen: BTreeMap<&str, u32> = BTreeMap::new();
+    Ok(requested
+        .iter()
+        .map(|id| {
+            let n = seen.entry(id.as_str()).or_insert(0);
+            *n += 1;
+            LockEntry {
+                slot_id: id.clone(),
+                occurrence: *n,
+            }
+        })
+        .collect())
+}
+
+/// Groupe déjà en base, vu par l'appariement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExistingGroup {
+    pub id: String,
+    pub slot_id: String,
+    pub occurrence: u32,
+    /// Son créneau est à venir. Un créneau commencé ne peut plus être retenu : son groupe n'est
+    /// ni réapparié ni mis en sommeil, il garde son `retained`.
+    pub upcoming: bool,
+}
+
+/// Issue de l'appariement d'un verrouillage.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LockPlan {
+    /// Groupes réappariés, gardés tels quels (disposition, nom, placements) et retenus.
+    pub reuse: Vec<String>,
+    /// Entrées sans groupe : un groupe neuf chacune, à nommer.
+    pub create: Vec<LockEntry>,
+    /// Groupes non réappariés des créneaux à venir : mis en sommeil, jamais supprimés (décision de
+    /// Vincent, 2026-11-07).
+    pub sleep: Vec<String>,
+}
+
+/// Apparie chaque entrée au groupe existant de même `(slot_id, occurrence)` (AD-4). Seuls les
+/// créneaux à venir sont replanifiés : un groupe d'un créneau commencé n'est dans aucune liste. Les
+/// listes gardent l'ordre des entrées, puis celui de `existing`.
+pub fn lock_plan(entries: &[LockEntry], existing: &[ExistingGroup]) -> LockPlan {
+    let mut plan = LockPlan::default();
+    for e in entries {
+        match existing
+            .iter()
+            .find(|g| g.slot_id == e.slot_id && g.occurrence == e.occurrence)
+        {
+            Some(g) => plan.reuse.push(g.id.clone()),
+            None => plan.create.push(e.clone()),
+        }
+    }
+    plan.sleep = existing
+        .iter()
+        .filter(|g| g.upcoming && !plan.reuse.contains(&g.id))
+        .map(|g| g.id.clone())
+        .collect();
+    plan
 }
 
 #[cfg(test)]
@@ -1337,26 +1464,151 @@ mod tests {
         use EventStatus::*;
         // AD-4 *Mutabilité* et *États*, ligne par ligne : réglages toujours modifiables, créneaux
         // en `open` seulement, `open|locked → cancelled`, et un événement annulé refuse tout.
+        // `open → locked` par le verrouillage, `locked → open` par le déverrouillage.
         let table = [
             (Open, Settings, Ok(())),
             (Open, AddSlot, Ok(())),
             (Open, RemoveSlot, Ok(())),
             (Open, Cancel, Ok(())),
+            (Open, Lock, Ok(())),
+            (Open, Unlock, Err(R::NotLocked)),
             (Locked, Settings, Ok(())),
             (Locked, AddSlot, Err(R::Locked)),
             (Locked, RemoveSlot, Err(R::Locked)),
             (Locked, Cancel, Ok(())),
+            (Locked, Lock, Err(R::Locked)),
+            (Locked, Unlock, Ok(())),
             (Cancelled, Settings, Err(R::Closed)),
             (Cancelled, AddSlot, Err(R::Closed)),
             (Cancelled, RemoveSlot, Err(R::Closed)),
             (Cancelled, Cancel, Err(R::Closed)),
+            (Cancelled, Lock, Err(R::Closed)),
+            (Cancelled, Unlock, Err(R::Closed)),
         ];
         for (status, action, expected) in table {
             assert_eq!(event_may(status, action), expected, "{status:?} {action:?}");
         }
         // Chaque couple (état, geste) figure une fois dans la table.
         let pairs: HashSet<_> = table.iter().map(|(s, a, _)| (*s, *a)).collect();
-        assert_eq!(pairs.len(), 3 * 4);
+        assert_eq!(pairs.len(), 3 * 6);
+    }
+
+    fn ids(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    fn entry(slot: &str, occurrence: u32) -> LockEntry {
+        LockEntry {
+            slot_id: slot.into(),
+            occurrence,
+        }
+    }
+
+    #[test]
+    fn a_lock_numbers_each_repeated_slot() {
+        let slots = [("a", at(2)), ("b", at(5))];
+        assert_eq!(
+            validate_lock(now(), &slots, &ids(&["a", "a", "b"])),
+            Ok(vec![entry("a", 1), entry("a", 2), entry("b", 1)])
+        );
+        assert_eq!(
+            validate_lock(now(), &slots, &ids(&["b", "a", "b", "b"])),
+            Ok(vec![
+                entry("b", 1),
+                entry("a", 1),
+                entry("b", 2),
+                entry("b", 3)
+            ])
+        );
+    }
+
+    #[test]
+    fn a_lock_checks_count_then_membership_then_time() {
+        let slots = [("a", at(2)), ("past", at(-1)), ("starting", at(0))];
+        assert_eq!(
+            validate_lock(now(), &slots, &[]),
+            Err(LockError::GroupCountOutOfRange)
+        );
+        assert_eq!(
+            validate_lock(now(), &slots, &ids(&["a"; GROUPS_MAX + 1])),
+            Err(LockError::GroupCountOutOfRange)
+        );
+        assert!(validate_lock(now(), &slots, &ids(&["a"; GROUPS_MAX])).is_ok());
+        // L'appartenance passe avant le temps, et le nombre avant tout.
+        assert_eq!(
+            validate_lock(now(), &slots, &ids(&["past", "x"])),
+            Err(LockError::SlotNotFound)
+        );
+        assert_eq!(
+            validate_lock(now(), &slots, &ids(&["x"; GROUPS_MAX + 1])),
+            Err(LockError::GroupCountOutOfRange)
+        );
+        // Un créneau qui commence maintenant a commencé.
+        assert_eq!(
+            validate_lock(now(), &slots, &ids(&["a", "past", "a", "starting"])),
+            Err(LockError::SlotInPast(vec![1, 3]))
+        );
+    }
+
+    #[test]
+    fn a_lock_pairs_by_slot_and_occurrence_and_never_drops_a_group() {
+        let existing = |list: &[(&str, &str, u32)]| -> Vec<ExistingGroup> {
+            list.iter()
+                .map(|&(id, slot, occurrence)| ExistingGroup {
+                    id: id.into(),
+                    slot_id: slot.into(),
+                    occurrence,
+                    upcoming: slot != "past",
+                })
+                .collect()
+        };
+        // Premier verrouillage : tout est neuf.
+        let entries = vec![entry("a", 1), entry("a", 2), entry("b", 1)];
+        assert_eq!(
+            lock_plan(&entries, &[]),
+            LockPlan {
+                reuse: vec![],
+                create: entries.clone(),
+                sleep: vec![],
+            }
+        );
+        // Moins : A#2 en sommeil.
+        let groups = existing(&[("g1", "a", 1), ("g2", "a", 2)]);
+        assert_eq!(
+            lock_plan(&[entry("a", 1)], &groups),
+            LockPlan {
+                reuse: ids(&["g1"]),
+                create: vec![],
+                sleep: ids(&["g2"]),
+            }
+        );
+        // Plus : seul A#2 est neuf ; un groupe en sommeil repris est réapparié.
+        let groups = existing(&[("g1", "a", 1), ("g3", "b", 1)]);
+        assert_eq!(
+            lock_plan(&[entry("a", 1), entry("a", 2), entry("b", 1)], &groups),
+            LockPlan {
+                reuse: ids(&["g1", "g3"]),
+                create: vec![entry("a", 2)],
+                sleep: vec![],
+            }
+        );
+        // Un créneau commencé n'est plus replanifié : son groupe reste tel quel.
+        let groups = existing(&[("gp", "past", 1), ("g1", "a", 1), ("g2", "a", 2)]);
+        assert_eq!(
+            lock_plan(&[entry("a", 1)], &groups),
+            LockPlan {
+                reuse: ids(&["g1"]),
+                create: vec![],
+                sleep: ids(&["g2"]),
+            }
+        );
+    }
+
+    #[test]
+    fn unlock_needs_an_upcoming_slot() {
+        assert!(has_upcoming_slot(now(), &[at(-3), at(1)]));
+        assert!(!has_upcoming_slot(now(), &[at(-3), at(0)]));
+        assert!(!has_upcoming_slot(now(), &[]));
     }
 
     #[test]

@@ -14,7 +14,10 @@ use domain::reference::{
     ClassesFile, InstancesFile, ReferenceFile, ReferenceIssue, ReferenceSet, RegionsFile,
     RolesFile, ServersFile, validate,
 };
+use domain::room::RoomTemplate;
 use serde::de::DeserializeOwned;
+
+use crate::config::check_room_template;
 
 /// Dossier fixe dans le conteneur ; non configurable.
 pub const REFERENCE_DIR: &str = "/data/reference";
@@ -263,6 +266,10 @@ pub struct Loader {
     loaded: Option<Fingerprint>,
     /// Dernier état d'échec journalisé, pour ne pas répéter la même erreur à chaque tick.
     failed: Option<(Fingerprint, Vec<Problem>)>,
+    /// Gabarit de nom de salle que tout nouveau jeu doit tenir (AD-18) ; posé après le démarrage.
+    room_template: Option<RoomTemplate>,
+    /// Empreinte du dernier jeu refusé pour le gabarit, journalisé une fois.
+    template_rejected: Option<Fingerprint>,
 }
 
 impl Loader {
@@ -272,7 +279,15 @@ impl Loader {
             store,
             loaded: None,
             failed: None,
+            room_template: None,
+            template_rejected: None,
         }
+    }
+
+    /// Désormais, un jeu valide que `template` ne tient plus (`check_room_template`) est refusé et
+    /// l'ancien gardé.
+    pub fn guard_room_template(&mut self, template: RoomTemplate) {
+        self.room_template = Some(template);
     }
 
     pub fn store(&self) -> &ReferenceStore {
@@ -293,8 +308,26 @@ impl Loader {
             (load_dir(&self.dir), "directory")
         };
         match result {
+            Ok(set)
+                if self
+                    .room_template
+                    .as_ref()
+                    .is_some_and(|t| check_room_template(t, &set).is_err()) =>
+            {
+                let logged = self.template_rejected.as_ref() != Some(&fingerprint);
+                if logged {
+                    // Ni le gabarit ni le libellé : seulement la variable en cause.
+                    tracing::warn!(
+                        variable = "ROOM_NAME_TEMPLATE",
+                        "reference rejected: room names would exceed room_label_max, previous set kept"
+                    );
+                }
+                self.template_rejected = Some(fingerprint);
+                PollOutcome::Failed { logged }
+            }
             Ok(set) => {
                 self.store.replace(Arc::new(set));
+                self.template_rejected = None;
                 self.loaded = Some(fingerprint);
                 self.failed = None;
                 tracing::info!(source, "reference loaded");

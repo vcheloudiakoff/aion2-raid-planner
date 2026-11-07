@@ -81,7 +81,8 @@ async function render() {
     </MemoryRouter>,
   );
   await flush();
-  click(m.container.querySelectorAll<HTMLButtonElement>('[role="tab"]')[2]);
+  // Par son libellé : en `locked`, Composition et Salle s'intercalent.
+  click([...m.container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((b) => b.textContent === "Réglages")!);
 }
 
 const q = <T extends Element>(sel: string) => m.container.querySelector<T>(sel);
@@ -597,10 +598,122 @@ describe("slots", () => {
   it("are hidden on a locked raid, while the settings stay editable", async () => {
     serve(() => json(viewWith({ status: "locked" })));
     await render();
-    expect(slotsBlock().textContent).toBe("CréneauxLe raid est verrouillé : les créneaux ne bougent plus.");
-    expect(slotsBlock().querySelectorAll("button, input")).toHaveLength(0);
+    expect(slotsBlock().textContent).toBe(
+      "CréneauxLe raid est verrouillé : les créneaux ne bougent plus.Déverrouiller" +
+        "Le raid revient en préparation : la grille et les créneaux se modifient à nouveau.",
+    );
+    // Seul « Déverrouiller » : ni suppression ni ajout.
+    expect([...slotsBlock().querySelectorAll("button, input")].map((b) => b.textContent)).toEqual(["Déverrouiller"]);
     fill(note(), "Go");
     expect(save().disabled).toBe(false);
+  });
+});
+
+describe("groups and unlock", () => {
+  const group = (id: string, slotId: string, occurrence: number, retained: boolean) => ({
+    id,
+    slotId,
+    occurrence,
+    retained,
+    parties: 2,
+    partySize: 5,
+    roomLabel: "I1",
+    roomName: `I1-${id}`,
+  });
+  const message = () => document.getElementById(dialog()!.getAttribute("aria-labelledby")!)!.textContent;
+  const unlockButton = () => q<HTMLButtonElement>('[data-testid="settings-unlock"] button');
+
+  it("names the groups and placements lost with a slot, sleeping groups included", async () => {
+    const calls = serve(
+      () =>
+        json(
+          viewWith(
+            {},
+            {
+              groups: [group("G1", "slot_b", 1, true), group("G2", "slot_b", 2, false), group("G3", "slot_past", 1, true)],
+              candidatures: organizerEvent.candidatures.map((c) => ({
+                ...c,
+                availabilities: c.availabilities.filter((a) => a.slotId !== "slot_past"),
+              })),
+            },
+          ),
+        ),
+      () => json(viewWith({ slots: organizerEvent.event.slots.filter((s) => s.id !== "slot_past") })),
+    );
+    await render();
+    // slot_b : deux groupes, dont un en sommeil, et deux joueurs.
+    click(removeOf("slot_b")!);
+    expect(message()).toBe(
+      "2 groupes de ce créneau, en sommeil compris, seront supprimés, avec leurs placements. " +
+        "2 joueurs ont coché ce créneau : leur dispo sera effacée.",
+    );
+    click(inDialog("Garder le créneau")!);
+    // slot_past : un groupe, personne n'a coché ; la confirmation est quand même demandée.
+    click(removeOf("slot_past")!);
+    expect(message()).toBe("1 groupe de ce créneau, en sommeil ou non, sera supprimé, avec ses placements.");
+    await press(inDialog("Supprimer le créneau"));
+    expect(posts(calls).map((c) => [c.url, sent(c)])).toEqual([["/api/organizer/slot-removal", { slotId: "slot_past" }]]);
+  });
+
+  it("unlocks after a confirmation; Garder verrouillé closes without sending", async () => {
+    const calls = serve(
+      () => json(viewWith({ status: "locked" }, { groups: [group("G1", "slot_a", 1, true)] })),
+      () => json(viewWith({}, { groups: [group("G1", "slot_a", 1, true)] })),
+    );
+    await render();
+    const trigger = unlockButton()!;
+    expect(trigger.textContent).toBe("Déverrouiller");
+    click(trigger);
+    expect(message()).toBe("Les joueurs ne verront plus leur placement. Groupes et noms de salle sont gardés.");
+    expect(document.activeElement).toBe(inDialog("Garder verrouillé"));
+    click(inDialog("Garder verrouillé")!);
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(posts(calls)).toEqual([]);
+
+    click(trigger);
+    await press(inDialog("Déverrouiller"));
+    expect(posts(calls).map((c) => [c.url, sent(c)])).toEqual([["/api/organizer/unlock", {}]]);
+    expect(dialog()).toBeNull();
+    // De retour en `open` : les créneaux se modifient, « Déverrouiller » disparaît.
+    expect(unlockButton()).toBeNull();
+    expect(addButton()).not.toBeNull();
+  });
+
+  it("is hidden without an upcoming slot, and on an open raid", async () => {
+    serve(() => json(viewWith({ status: "locked", slots: [organizerEvent.event.slots[0]] })));
+    await render();
+    expect(slotsBlock().textContent).toBe("CréneauxLe raid est verrouillé : les créneaux ne bougent plus.");
+    expect(unlockButton()).toBeNull();
+    m.unmount();
+    serve(() => json(organizerEvent));
+    await render();
+    expect(unlockButton()).toBeNull();
+  });
+
+  it("keeps the sheet open on a quota failure, and shows a state refusal in the page", async () => {
+    for (const [status, code, text, open] of [
+      [429, "limit.rate_limited", "Doucement : réessaie dans un moment.", true],
+      [409, "event.no_upcoming_slot", "Plus aucun créneau à venir : le raid reste verrouillé.", false],
+      [409, "event.not_locked", "Le raid n'est plus verrouillé.", false],
+    ] as const) {
+      const calls = serve(
+        () => json(viewWith({ status: "locked" })),
+        () => problem(status, code),
+      );
+      await render();
+      click(unlockButton()!);
+      await press(inDialog("Déverrouiller"));
+      if (open) {
+        expect(dialog()!.querySelector('[role="alert"]')!.textContent, code).toBe(text);
+      } else {
+        expect(dialog(), code).toBeNull();
+        expect(q('[data-testid="action-error"]')!.textContent, code).toBe(text);
+        expect(reads(calls), code).toBe(2);
+      }
+      m.unmount();
+    }
+    m = mount(<div />);
   });
 });
 

@@ -1,12 +1,15 @@
-//! Générateur injecté d'identifiants publics et de secrets de lien (AD-3).
+//! Générateur injecté d'identifiants publics, de secrets de lien (AD-3) et de codes de salle
+//! (AD-18).
 //!
 //! Id public : 128 bits, base64url sans padding, 22 caractères. Secret : 256 bits, base64url sans
-//! padding, 43 caractères. Les deux sortent d'un CSPRNG.
+//! padding, 43 caractères. Code de salle : 4 caractères Crockford (`domain::room`). Les trois
+//! sortent d'un CSPRNG.
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use data_encoding::BASE64URL_NOPAD;
+use domain::room::{CODE_ALPHABET, CODE_LEN};
 use rand::Rng;
 
 pub const ID_BYTES: usize = 16;
@@ -54,6 +57,16 @@ pub trait IdGenerator: Send + Sync {
     fn secret(&self) -> Secret;
     /// Octets aléatoires du jeton de formulaire.
     fn nonce(&self) -> [u8; NONCE_BYTES];
+    /// Code d'un nom de salle : [`CODE_LEN`] caractères de [`CODE_ALPHABET`].
+    fn room_code(&self) -> String;
+}
+
+/// Code de salle tiré de `bytes` : 32 symboles, 5 bits par octet, sans biais.
+fn crockford(bytes: [u8; CODE_LEN]) -> String {
+    bytes
+        .iter()
+        .map(|b| char::from(CODE_ALPHABET[usize::from(b & 0x1f)]))
+        .collect()
 }
 
 /// Générateur de production : `rand::rng()`, CSPRNG ChaCha ensemencé par le système.
@@ -78,6 +91,12 @@ impl IdGenerator for SystemIdGenerator {
         rand::rng().fill_bytes(&mut bytes);
         bytes
     }
+
+    fn room_code(&self) -> String {
+        let mut bytes = [0u8; CODE_LEN];
+        rand::rng().fill_bytes(&mut bytes);
+        crockford(bytes)
+    }
 }
 
 /// Générateur de test : valeurs de même forme que la production, prévisibles d'une exécution à
@@ -85,6 +104,8 @@ impl IdGenerator for SystemIdGenerator {
 #[derive(Debug, Default)]
 pub struct DeterministicIdGenerator {
     next: AtomicU64,
+    /// Compteur propre aux codes de salle : `0000`, `0001`…, indépendant des ids.
+    next_code: AtomicU64,
 }
 
 impl DeterministicIdGenerator {
@@ -112,6 +133,13 @@ impl IdGenerator for DeterministicIdGenerator {
 
     fn nonce(&self) -> [u8; NONCE_BYTES] {
         self.bytes::<NONCE_BYTES>(b'n')
+    }
+
+    fn room_code(&self) -> String {
+        let n = self.next_code.fetch_add(1, Ordering::Relaxed);
+        // Chiffres de poids fort d'abord, en base 32.
+        let digit = |shift: u32| ((n >> shift) & 0x1f) as u8;
+        crockford([digit(15), digit(10), digit(5), digit(0)])
     }
 }
 
@@ -160,6 +188,21 @@ mod tests {
         assert_eq!(g.secret().expose().len(), SECRET_LEN);
         let again = DeterministicIdGenerator::new();
         assert_eq!(again.public_id(), a);
+    }
+
+    #[test]
+    fn room_codes_are_crockford() {
+        let g = SystemIdGenerator;
+        for _ in 0..64 {
+            assert!(domain::room::is_room_code(&g.room_code()));
+        }
+        let d = DeterministicIdGenerator::new();
+        let first: Vec<_> = (0..3).map(|_| d.room_code()).collect();
+        assert_eq!(first, ["0000", "0001", "0002"]);
+        // Les ids ne décalent pas les codes.
+        d.public_id();
+        assert_eq!(d.room_code(), "0003");
+        assert!((0..40).all(|_| domain::room::is_room_code(&d.room_code())));
     }
 
     #[test]

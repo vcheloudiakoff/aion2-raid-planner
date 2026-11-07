@@ -382,6 +382,10 @@ impl IdGenerator for Gate {
     fn nonce(&self) -> [u8; NONCE_BYTES] {
         self.inner.nonce()
     }
+
+    fn room_code(&self) -> String {
+        self.inner.room_code()
+    }
 }
 
 #[tokio::test]

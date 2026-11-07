@@ -4,8 +4,10 @@ import {
   addSlot,
   cancelEvent,
   getOrganizerView,
+  lockEvent,
   removeSlot,
   setCandidatureStatus,
+  unlockEvent,
   updateEventSettings,
 } from "./organizer";
 
@@ -86,5 +88,23 @@ describe("organizer api", () => {
       { slotId: SLOT },
       {},
     ]);
+  });
+
+  it("locks with the slot ids repeated in the body and unlocks with an empty body, the secret in the header only", async () => {
+    const calls = serve();
+    const [A, B] = ["a".repeat(22), "b".repeat(22)];
+    await lockEvent(SECRET, [A, A, B]);
+    await unlockEvent(SECRET);
+    expect(calls.map((c) => [c.init?.method, c.url])).toEqual([
+      ["POST", "/api/organizer/lock"],
+      ["POST", "/api/organizer/unlock"],
+    ]);
+    for (const c of calls) {
+      expect(headers(c)["X-Link-Secret"]).toBe(SECRET);
+      expect(c.url).not.toContain(SECRET);
+      expect(c.url).not.toContain(A);
+      expect(String(c.init?.body ?? "")).not.toContain(SECRET);
+    }
+    expect(calls.map((c) => JSON.parse(String(c.init?.body)))).toEqual([{ slotIds: [A, A, B] }, {}]);
   });
 });

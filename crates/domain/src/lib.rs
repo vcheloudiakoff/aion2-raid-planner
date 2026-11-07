@@ -5,6 +5,7 @@ pub mod counts;
 pub mod event;
 pub mod pseudo_srv;
 pub mod reference;
+pub mod room;
 mod timestamp;
 pub mod validate;
 

@@ -288,8 +288,9 @@ pub async fn insert_slot(
     Ok(())
 }
 
-/// Supprime le créneau `slot_id` s'il appartient à l'événement ; ses `availabilities` partent par la
-/// cascade déclarée (0002). Les statuts des candidatures ne bougent pas. Faux si rien n'est supprimé.
+/// Supprime le créneau `slot_id` s'il appartient à l'événement ; ses `availabilities` (0002), ses
+/// `groups` et leurs `assignments` (0003) partent par la cascade déclarée. Les statuts des
+/// candidatures ne bougent pas. Faux si rien n'est supprimé.
 pub async fn delete_slot(
     conn: &mut SqliteConnection,
     event_id: &str,
@@ -313,6 +314,25 @@ pub async fn cancel(
     sqlx::query("UPDATE events SET status = ?, cancelled_at = ? WHERE id = ?")
         .bind(EventStatus::Cancelled.as_str())
         .bind(cancelled_at)
+        .bind(event_id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
+/// Pose le statut `open` ou `locked` (verrouillage, déverrouillage). Rien d'autre ne change.
+pub async fn set_status(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+    status: EventStatus,
+) -> Result<(), sqlx::Error> {
+    debug_assert_ne!(
+        status,
+        EventStatus::Cancelled,
+        "cancel() pose aussi cancelled_at"
+    );
+    sqlx::query("UPDATE events SET status = ? WHERE id = ?")
+        .bind(status.as_str())
         .bind(event_id)
         .execute(&mut *conn)
         .await?;

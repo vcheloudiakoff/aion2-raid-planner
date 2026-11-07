@@ -6,7 +6,8 @@
 //! Tout se passe dans la transaction (AD-16) : relecture de l'événement et de la candidature, que
 //! l'on cherche dans l'événement du lien (une candidature d'un autre événement est
 //! `candidature.not_found`), règle d'état, écriture du statut et de `updated_at`, puis la vue
-//! organisateur relue avant le commit. Le statut courant redemandé n'écrit rien. Ni pseudo ni secret
+//! organisateur relue avant le commit. Le passage à `rejected` retire le placement de la candidature
+//! dans la même transaction (AD-4). Le statut courant redemandé n'écrit rien. Ni pseudo ni secret
 //! journalisé (AD-15).
 
 use domain::Timestamp;
@@ -18,7 +19,7 @@ use crate::app::AppState;
 use crate::app::queries::organizer_view;
 use crate::http::dto::OrganizerEvent;
 use crate::http::errors::{Code, Problem};
-use crate::infra::{candidatures, events};
+use crate::infra::{candidatures, events, groups};
 
 /// `event_id` vient de la ligne du lien organisateur ; `candidature_id` du corps, donc vérifié ici.
 pub async fn set_candidature_status(
@@ -89,7 +90,11 @@ async fn write(
         .ok_or_else(|| refused(Code::CandidatureNotFound))?;
     let transition = organizer_may(event_status, current, decision).map_err(refused)?;
     if transition == Transition::Change {
-        // Aucune ligne `assignments` avant l'epic 3 : le refus n'a pas de placement à retirer ici.
+        // Un refus retire le placement dans la même transaction (AD-4) : seules les `accepted` sont
+        // plaçables.
+        if decision == Decision::Rejected {
+            groups::delete_assignment(&mut tx, candidature_id).await?;
+        }
         candidatures::set_status(&mut tx, candidature_id, decision.status(), now).await?;
     }
     let view = organizer_view::load(&mut tx, reference, event_id)

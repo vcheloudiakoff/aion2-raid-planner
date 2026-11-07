@@ -154,6 +154,7 @@ async fn read_lists_every_candidature_in_creation_order_with_pseudo_srv() {
             "classBounds",
             "discordUrl",
             "event",
+            "groups",
             "slots"
         ]
     );
@@ -440,7 +441,11 @@ async fn slots_count_only_accepted_availabilities_with_coverage_per_class() {
         ids
     );
     let a = &slots[0];
-    assert_eq!(sorted_keys(a), ["availableAccepted", "coverage", "slotId"]);
+    assert_eq!(
+        sorted_keys(a),
+        ["availableAccepted", "coverage", "hasGroups", "slotId"]
+    );
+    assert_eq!(a["hasGroups"], false);
     assert_eq!(a["slotId"], e.slots[0]);
     assert_eq!(a["availableAccepted"], 2);
     let coverage = a["coverage"].as_object().unwrap();

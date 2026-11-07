@@ -70,9 +70,12 @@ codes! {
     EventDiscordUrlInvalid => "event.discord_url_invalid", BAD_REQUEST;
     EventFactionScopeNotAllowed => "event.faction_scope_not_allowed", BAD_REQUEST;
     EventFieldImmutable => "event.field_immutable", CONFLICT;
+    EventGroupCountOutOfRange => "event.group_count_out_of_range", BAD_REQUEST;
     EventLocked => "event.locked", CONFLICT;
     EventMinCpOutOfRange => "event.min_cp_out_of_range", BAD_REQUEST;
+    EventNoUpcomingSlot => "event.no_upcoming_slot", CONFLICT;
     EventNotFound => "event.not_found", NOT_FOUND;
+    EventNotLocked => "event.not_locked", CONFLICT;
     EventNoteInvalid => "event.note_invalid", BAD_REQUEST;
     FormMalformed => "form.malformed", BAD_REQUEST;
     FormRejected => "form.rejected", BAD_REQUEST;
@@ -147,6 +150,7 @@ impl From<EventRefusal> for Code {
         match r {
             EventRefusal::Closed => Code::EventClosed,
             EventRefusal::Locked => Code::EventLocked,
+            EventRefusal::NotLocked => Code::EventNotLocked,
         }
     }
 }
@@ -439,10 +443,16 @@ mod tests {
         for (r, code) in [
             (EventRefusal::Closed, Code::EventClosed),
             (EventRefusal::Locked, Code::EventLocked),
+            (EventRefusal::NotLocked, Code::EventNotLocked),
         ] {
             assert_eq!(Code::from(r), code);
             assert_eq!(code.status(), StatusCode::CONFLICT, "{code}");
         }
+        assert_eq!(Code::EventNoUpcomingSlot.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            Code::EventGroupCountOutOfRange.status(),
+            StatusCode::BAD_REQUEST
+        );
         assert_eq!(Code::SlotNotFound.as_str(), "slot.not_found");
         assert_eq!(Code::SlotNotFound.status(), StatusCode::NOT_FOUND);
     }
