@@ -4,6 +4,7 @@ import type {
   CreatedEvent,
   OrganizerCandidature,
   OrganizerEvent,
+  OrganizerGroup,
   ParticipantView,
   PublicEvent,
   ReferenceSet,
@@ -213,3 +214,18 @@ export const organizerEvent: OrganizerEvent = {
     }),
   ],
 };
+
+/** Groupe retenu de disposition 2 × 5 sur `slot_a`, sans placement ; `patch` par-dessus. */
+export const organizerGroup = (patch: Partial<OrganizerGroup> & Pick<OrganizerGroup, "id">): OrganizerGroup => ({
+  slotId: "slot_a",
+  occurrence: 1,
+  retained: true,
+  parties: 2,
+  partySize: 5,
+  roomLabel: "I1",
+  roomName: `I1-${patch.id.slice(0, 4).toUpperCase()}`,
+  starters: [],
+  bench: [],
+  classWarnings: {},
+  ...patch,
+});

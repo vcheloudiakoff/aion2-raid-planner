@@ -178,8 +178,8 @@ async fn event_status(state: &AppState, e: &Event) -> String {
     s
 }
 
-/// Placement direct en base : `apply_placement` arrive avec la story 3-3. L'événement est celui du
-/// groupe.
+/// Placement direct en base, sans passer par `apply_placement` (story 3-3). L'événement est celui
+/// du groupe.
 async fn place(state: &AppState, c: &Cand, group: &str) {
     sql(
         state,
@@ -259,6 +259,8 @@ async fn lock_creates_one_group_per_entry_with_a_frozen_layout_and_a_room_name()
     assert_eq!(
         keys,
         [
+            "bench",
+            "classWarnings",
             "id",
             "occurrence",
             "parties",
@@ -266,7 +268,8 @@ async fn lock_creates_one_group_per_entry_with_a_frozen_layout_and_a_room_name()
             "retained",
             "roomLabel",
             "roomName",
-            "slotId"
+            "slotId",
+            "starters"
         ]
     );
     for (g, row) in dto.iter().zip(&rows) {

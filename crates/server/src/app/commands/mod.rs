@@ -2,6 +2,7 @@
 //! `domain` avec le `ReferenceSet` pris une fois, écrit et commit (AD-16).
 
 pub mod add_slot;
+pub mod apply_placement;
 pub mod cancel_event;
 pub mod create_event;
 pub mod lock_event;
@@ -16,8 +17,8 @@ pub mod withdraw_candidature;
 use crate::http::errors::{Code, Problem};
 
 /// Échec d'une commande de l'organisateur sur son événement (réglages, créneaux, annulation,
-/// verrouillage) : un refus rendu tel quel, ou une erreur SQL ou interne journalisée puis rendue en
-/// 500 sans détail (AD-5).
+/// verrouillage, placement) : un refus rendu tel quel, ou une erreur SQL ou interne journalisée puis
+/// rendue en 500 sans détail (AD-5).
 pub(crate) enum EventWriteError {
     Refused(Problem),
     Db(sqlx::Error),

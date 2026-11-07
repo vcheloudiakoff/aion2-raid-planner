@@ -929,11 +929,12 @@ describe("availability tab", () => {
 });
 
 describe("locked tabs", () => {
+  const empty = { starters: [], bench: [], classWarnings: {} };
   const groups: OrganizerEvent["groups"] = [
-    { id: "g1", slotId: "slot_a", occurrence: 1, retained: true, parties: 2, partySize: 5, roomLabel: "I1", roomName: "I1-K7Q2" },
+    { id: "g1", slotId: "slot_a", occurrence: 1, retained: true, parties: 2, partySize: 5, roomLabel: "I1", roomName: "I1-K7Q2", ...empty },
     // En sommeil : ni numéro ni ligne.
-    { id: "g2", slotId: "slot_a", occurrence: 2, retained: false, parties: 2, partySize: 5, roomLabel: "I1", roomName: "I1-AAAA" },
-    { id: "g3", slotId: "slot_b", occurrence: 1, retained: true, parties: 2, partySize: 5, roomLabel: "I1", roomName: "I1-M3NP" },
+    { id: "g2", slotId: "slot_a", occurrence: 2, retained: false, parties: 2, partySize: 5, roomLabel: "I1", roomName: "I1-AAAA", ...empty },
+    { id: "g3", slotId: "slot_b", occurrence: 1, retained: true, parties: 2, partySize: 5, roomLabel: "I1", roomName: "I1-M3NP", ...empty },
   ];
   const locked = () => viewWith({}, { status: "locked" }, { groups });
   const opened = () => viewWith({}, {}, { groups });
@@ -958,24 +959,19 @@ describe("locked tabs", () => {
     m = mount(<div />);
   });
 
-  it("list the retained groups G1… in Composition and Salle, without any action", async () => {
+  it("list the retained groups G1… in Salle, without any action", async () => {
     serve(() => json(locked()));
     await render();
-    for (const [i, id] of [
-      [2, "composition"],
-      [3, "room"],
-    ] as const) {
-      click(tabs()[i]);
-      const panel = q<HTMLElement>(`[data-testid="${id}"]`)!;
-      expect(panel.querySelector("h2")!.textContent).toBe(tabs()[i].textContent);
-      expect([...panel.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
-        "G1 · mer. 05:00 · I1-K7Q2",
-        "G2 · ven. 05:00 · I1-M3NP",
-      ]);
-      // Le groupe en sommeil n'a pas de ligne, mais il est compté.
-      expect(q(`[data-testid="${id}-sleeping"]`)!.textContent).toBe("1 groupe en sommeil, repris s'il est reverrouillé.");
-      expect(panel.querySelectorAll("button, input, a")).toHaveLength(0);
-    }
+    click(tabs()[3]);
+    const panel = q<HTMLElement>('[data-testid="room"]')!;
+    expect(panel.querySelector("h2")!.textContent).toBe(tabs()[3].textContent);
+    expect([...panel.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+      "G1 · mer. 05:00 · I1-K7Q2",
+      "G2 · ven. 05:00 · I1-M3NP",
+    ]);
+    // Le groupe en sommeil n'a pas de ligne, mais il est compté.
+    expect(q('[data-testid="room-sleeping"]')!.textContent).toBe("1 groupe en sommeil, repris s'il est reverrouillé.");
+    expect(panel.querySelectorAll("button, input, a")).toHaveLength(0);
   });
 
   it("go back to Disponibilités when the current tab disappears on refresh", async () => {

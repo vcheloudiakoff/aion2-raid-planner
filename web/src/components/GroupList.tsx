@@ -1,8 +1,8 @@
 // Liste des groupes retenus (SPEC epic 3 CAP-2) : « G1 · jeu. 21:00 · LUDRA-K7Q2 », dans l'ordre
 // reçu (début de créneau puis occurrence). Le numéro « G1 » se calcule ici, sur les seuls groupes
 // `retained` : un groupe en sommeil n'a ni numéro ni ligne, seulement un compte sous la liste (il
-// compte aussi dans la confirmation de suppression d'un créneau). Contenu minimal des onglets Composition
-// et Salle en story 3-2, sans action ; le placement (3-3) et la salle (3-4) le remplacent.
+// compte aussi dans la confirmation de suppression d'un créneau). Contenu minimal de l'onglet Salle,
+// sans action, que la story 3-4 remplace ; `retainedGroups` numérote aussi les puces de Composition.
 
 import type { OrganizerEvent, OrganizerGroup } from "../api/types";
 import { t, useLang } from "../i18n";

@@ -69,6 +69,9 @@ const group = (patch: Partial<OrganizerGroup> & Pick<OrganizerGroup, "id" | "slo
   partySize: 5,
   roomLabel: "I1",
   roomName: `I1-${patch.id}`,
+  starters: [],
+  bench: [],
+  classWarnings: {},
   ...patch,
 });
 

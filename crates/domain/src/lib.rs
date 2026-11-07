@@ -3,6 +3,7 @@
 pub mod candidature;
 pub mod counts;
 pub mod event;
+pub mod placement;
 pub mod pseudo_srv;
 pub mod reference;
 pub mod room;

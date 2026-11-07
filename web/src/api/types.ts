@@ -236,7 +236,8 @@ export interface OrganizerSlot {
 
 /** Un groupe : son créneau et son rang d'occurrence, `retained` s'il fait partie du verrouillage
  * courant, la disposition et le libellé figés à sa création, et son nom de salle composé par le
- * serveur. Le libellé « G1 » se calcule ici, sur les seuls groupes `retained`, dans l'ordre reçu. */
+ * serveur. Le libellé « G1 » se calcule ici, sur les seuls groupes `retained`, dans l'ordre reçu.
+ * Ses placements et leurs avertissements, calculés par le serveur à la lecture. */
 export interface OrganizerGroup {
   id: string;
   slotId: string;
@@ -246,6 +247,34 @@ export interface OrganizerGroup {
   partySize: number;
   roomLabel: string;
   roomName: string;
+  /** Titulaires, triés par équipe puis par slot. */
+  starters: GroupStarter[];
+  /** Banc, trié par rang (contigu à partir de 1). */
+  bench: GroupBench[];
+  /** `classId → compte`, seulement les classes bornées dont le compte de titulaires sort des bornes. */
+  classWarnings: Record<string, ClassWarning>;
+}
+
+/** Un titulaire ; `unavailable` s'il n'a pas coché le créneau du groupe (avertissement). */
+export interface GroupStarter {
+  candidatureId: string;
+  party: number;
+  index: number;
+  unavailable: boolean;
+}
+
+/** Un joueur au banc ; `unavailable` s'il n'a pas coché le créneau du groupe. */
+export interface GroupBench {
+  candidatureId: string;
+  benchIndex: number;
+  unavailable: boolean;
+}
+
+/** Compte des titulaires d'une classe hors de ses bornes (« 3 / max 2 »). */
+export interface ClassWarning {
+  count: number;
+  min: number;
+  max: number;
 }
 
 /** Statut que l'organisateur peut demander. */
@@ -285,4 +314,14 @@ export interface SlotRemoval {
 /** Corps de `POST /api/organizer/lock` : un id de créneau par groupe, doublons répétés. */
 export interface LockEvent {
   slotIds: string[];
+}
+
+/** Une entrée du placement : titulaire (`party` et `index`) ou banc (`benchIndex`). */
+export type PlacementEntry =
+  | { candidatureId: string; groupId: string; party: number; index: number }
+  | { candidatureId: string; groupId: string; benchIndex: number };
+
+/** Corps de `POST /api/organizer/placement` : le placement complet des groupes retenus. */
+export interface ApplyPlacement {
+  placements: PlacementEntry[];
 }

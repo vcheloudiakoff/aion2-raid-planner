@@ -11,6 +11,7 @@ use axum::http::header::{CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 use axum::response::{IntoResponse, Response};
 use domain::candidature::{CandidatureError, OrganizerRefusal, ParticipantRefusal};
 use domain::event::{EventError, EventRefusal};
+use domain::placement::PlacementError;
 use serde::Serialize;
 
 pub const PROBLEM_JSON: &str = "application/problem+json";
@@ -84,6 +85,11 @@ codes! {
     LimitClientIpMissing => "limit.client_ip_missing", BAD_REQUEST;
     LimitPaused => "limit.paused", SERVICE_UNAVAILABLE;
     LimitRateLimited => "limit.rate_limited", TOO_MANY_REQUESTS;
+    PlacementCandidatureNotPlaceable => "placement.candidature_not_placeable", BAD_REQUEST;
+    PlacementDuplicateCandidature => "placement.duplicate_candidature", BAD_REQUEST;
+    PlacementOutOfLayout => "placement.out_of_layout", BAD_REQUEST;
+    PlacementSlotTaken => "placement.slot_taken", BAD_REQUEST;
+    PlacementUnknownGroup => "placement.unknown_group", BAD_REQUEST;
     ReferenceUnavailable => "reference.unavailable", SERVICE_UNAVAILABLE;
     ReferenceUnknown => "reference.unknown", BAD_REQUEST;
     ServerNotFound => "server.not_found", NOT_FOUND;
@@ -151,6 +157,18 @@ impl From<EventRefusal> for Code {
             EventRefusal::Closed => Code::EventClosed,
             EventRefusal::Locked => Code::EventLocked,
             EventRefusal::NotLocked => Code::EventNotLocked,
+        }
+    }
+}
+
+impl From<PlacementError> for Code {
+    fn from(e: PlacementError) -> Self {
+        match e {
+            PlacementError::CandidatureNotPlaceable => Code::PlacementCandidatureNotPlaceable,
+            PlacementError::DuplicateCandidature => Code::PlacementDuplicateCandidature,
+            PlacementError::UnknownGroup => Code::PlacementUnknownGroup,
+            PlacementError::OutOfLayout => Code::PlacementOutOfLayout,
+            PlacementError::SlotTaken => Code::PlacementSlotTaken,
         }
     }
 }

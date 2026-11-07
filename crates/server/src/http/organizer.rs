@@ -10,7 +10,9 @@
 //! - `POST /api/organizer/slot-removal` : corps `{slotId}`, classe `write` ;
 //! - `POST /api/organizer/cancellation` : corps `{}`, classe `write` ;
 //! - `POST /api/organizer/lock` : corps `{slotIds}`, un id par groupe, classe `write` ;
-//! - `POST /api/organizer/unlock` : corps `{}`, classe `write`.
+//! - `POST /api/organizer/unlock` : corps `{}`, classe `write` ;
+//! - `POST /api/organizer/placement` : corps `{placements}`, le placement complet des groupes
+//!   retenus, classe `write`.
 //!
 //! Les POST lisent leur corps par `FormJson` : sans jeton de formulaire ni honeypot ni disjoncteur
 //! (AD-7) ; un corps de mauvaise forme (un `status` hors des deux valeurs, un champ manquant) est
@@ -23,6 +25,7 @@ use axum::response::{IntoResponse, Response};
 
 use crate::app::AppState;
 use crate::app::commands::add_slot::add_slot;
+use crate::app::commands::apply_placement::apply_placement;
 use crate::app::commands::cancel_event::cancel_event;
 use crate::app::commands::lock_event::lock_event;
 use crate::app::commands::remove_slot::remove_slot;
@@ -31,8 +34,8 @@ use crate::app::commands::unlock_event::unlock_event;
 use crate::app::commands::update_event_settings::update_event_settings;
 use crate::app::queries::organizer_view::organizer_view;
 use crate::http::dto::{
-    Cancellation, LockEvent, NewSlot, OrganizerEvent, SetCandidatureStatus, SlotRemoval, Unlock,
-    UpdateEventSettings,
+    ApplyPlacement, Cancellation, LockEvent, NewSlot, OrganizerEvent, SetCandidatureStatus,
+    SlotRemoval, Unlock, UpdateEventSettings,
 };
 use crate::http::errors::Problem;
 use crate::http::form_token::FormJson;
@@ -98,6 +101,15 @@ pub async fn post_unlock(
     FormJson(Unlock {}): FormJson<Unlock>,
 ) -> Response {
     respond(unlock_event(&state, link.event_id()).await)
+}
+
+pub async fn post_placement(
+    State(state): State<AppState>,
+    link: OrganizerLink,
+    FormJson(body): FormJson<ApplyPlacement>,
+) -> Response {
+    let entries: Vec<_> = body.placements.into_iter().map(Into::into).collect();
+    respond(apply_placement(&state, link.event_id(), &entries).await)
 }
 
 /// 200 `OrganizerEvent` ; `Cache-Control: no-store` comme toute l'API.

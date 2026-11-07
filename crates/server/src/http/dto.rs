@@ -472,7 +472,8 @@ pub struct OrganizerSlot {
 /// Un groupe vu par l'organisateur (AD-4 *Verrouillage*) : son créneau et son rang d'occurrence,
 /// `retained` s'il fait partie du verrouillage courant, la disposition et le libellé figés à sa
 /// création, et son nom de salle composé par le serveur (AD-18). Le libellé « G1 » est calculé par
-/// le client.
+/// le client. Ses placements et leurs avertissements, calculés à la lecture
+/// (`domain::placement::warnings`), jamais stockés.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizerGroup {
@@ -484,6 +485,42 @@ pub struct OrganizerGroup {
     pub party_size: u32,
     pub room_label: String,
     pub room_name: String,
+    /// Titulaires, triés par équipe puis par slot.
+    pub starters: Vec<GroupStarter>,
+    /// Banc, trié par rang (contigu à partir de 1).
+    pub bench: Vec<GroupBench>,
+    /// `classId → {count, min, max}`, seulement les classes bornées dont le compte de titulaires
+    /// sort de `[min, max]`.
+    pub class_warnings: BTreeMap<String, ClassWarning>,
+}
+
+/// Un titulaire : `unavailable` s'il n'a pas coché le créneau du groupe (avertissement, jamais une
+/// erreur).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupStarter {
+    pub candidature_id: String,
+    pub party: u32,
+    pub index: u32,
+    pub unavailable: bool,
+}
+
+/// Un joueur au banc : `unavailable` s'il n'a pas coché le créneau du groupe.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupBench {
+    pub candidature_id: String,
+    pub bench_index: u32,
+    pub unavailable: bool,
+}
+
+/// Compte des titulaires d'une classe hors de ses bornes (« 3 / max 2 »).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassWarning {
+    pub count: u32,
+    pub min: u32,
+    pub max: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -580,3 +617,39 @@ pub struct LockEvent {
 /// Corps de `POST /api/organizer/unlock` : vide, `{}`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Unlock {}
+
+/// Corps de `POST /api/organizer/placement` : le placement complet des groupes retenus, qui
+/// remplace l'actuel. Chaque id vise une candidature ou un groupe que la commande cherche dans
+/// l'événement du lien, jamais ailleurs.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlacement {
+    pub placements: Vec<PlacementEntry>,
+}
+
+/// Une entrée : titulaire (`party` et `index`) ou banc (`benchIndex`). Nombres en `i64` : une
+/// valeur hors bornes est une erreur de champ, pas un corps illisible.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacementEntry {
+    pub candidature_id: String,
+    pub group_id: String,
+    #[serde(default)]
+    pub party: Option<i64>,
+    #[serde(default)]
+    pub index: Option<i64>,
+    #[serde(default)]
+    pub bench_index: Option<i64>,
+}
+
+impl From<PlacementEntry> for domain::placement::PlacementInput {
+    fn from(e: PlacementEntry) -> Self {
+        Self {
+            candidature_id: e.candidature_id,
+            group_id: e.group_id,
+            party: e.party,
+            index: e.index,
+            bench_index: e.bench_index,
+        }
+    }
+}

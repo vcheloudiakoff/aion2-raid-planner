@@ -1,14 +1,17 @@
 // Vue organisateur (CAP-5), sous le lien `/o/<secret>` : lecture, tri des candidatures, réglages,
-// créneaux, annulation, verrouillage et déverrouillage. Le secret part en en-tête seulement, jamais dans l'URL ni le corps ; les
-// ids (candidature, créneau) vont dans le corps (AD-3). Pas de jeton de formulaire : le secret
+// créneaux, annulation, verrouillage, déverrouillage et placement. Le secret part en en-tête
+// seulement, jamais dans l'URL ni le corps ; les ids (candidature, créneau, groupe) vont dans le corps
+// (AD-3). Pas de jeton de formulaire : le secret
 // organisateur suffit (AD-7). Chaque commande rend la vue à jour.
 
 import { getJson, postJson } from "./client";
 import type {
+  ApplyPlacement,
   Decision,
   LockEvent,
   NewSlot,
   OrganizerEvent,
+  PlacementEntry,
   SetCandidatureStatus,
   SlotRemoval,
   UpdateEventSettings,
@@ -22,6 +25,7 @@ export const SLOT_REMOVAL_URL = `${ORGANIZER_URL}/slot-removal`;
 export const CANCELLATION_URL = `${ORGANIZER_URL}/cancellation`;
 export const LOCK_URL = `${ORGANIZER_URL}/lock`;
 export const UNLOCK_URL = `${ORGANIZER_URL}/unlock`;
+export const PLACEMENT_URL = `${ORGANIZER_URL}/placement`;
 
 export function getOrganizerView(secret: string): Promise<OrganizerEvent> {
   return getJson<OrganizerEvent>(ORGANIZER_URL, { linkSecret: secret });
@@ -63,4 +67,10 @@ export function lockEvent(secret: string, slotIds: string[]): Promise<OrganizerE
 /** Ramène l'événement en préparation ; groupes et noms de salle sont gardés. */
 export function unlockEvent(secret: string): Promise<OrganizerEvent> {
   return postJson<OrganizerEvent>(UNLOCK_URL, {}, { linkSecret: secret });
+}
+
+/** Remplace le placement complet des groupes retenus (événement `locked` seulement). */
+export function applyPlacement(secret: string, placements: PlacementEntry[]): Promise<OrganizerEvent> {
+  const body: ApplyPlacement = { placements };
+  return postJson<OrganizerEvent>(PLACEMENT_URL, body, { linkSecret: secret });
 }

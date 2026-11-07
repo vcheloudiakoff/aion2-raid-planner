@@ -2,6 +2,7 @@
 //! seulement dans la transaction d'une commande (AD-16), qui passe `&mut *tx`.
 
 use domain::Timestamp;
+use domain::placement::{Placement, Seat};
 use sqlx::SqliteConnection;
 
 /// Groupe lu en base.
@@ -131,5 +132,112 @@ pub async fn delete_assignment(
         .bind(candidature_id)
         .execute(&mut *conn)
         .await?;
+    Ok(())
+}
+
+/// Placement lu en base.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignmentRow {
+    pub candidature_id: String,
+    pub group_id: String,
+    pub seat: Seat,
+}
+
+type AssignmentColumns = (String, String, Option<i64>, Option<i64>, Option<i64>);
+
+fn seat(
+    party: Option<i64>,
+    party_index: Option<i64>,
+    bench_index: Option<i64>,
+) -> Result<Seat, sqlx::Error> {
+    let to = |v: i64, column| {
+        u32::try_from(v).map_err(|_| {
+            sqlx::Error::Decode(format!("invalid value in assignments.{column}").into())
+        })
+    };
+    match (party, party_index, bench_index) {
+        (Some(party), Some(index), None) => Ok(Seat::Starter {
+            party: to(party, "party")?,
+            index: to(index, "party_index")?,
+        }),
+        (None, None, Some(bench)) => Ok(Seat::Bench {
+            bench_index: to(bench, "bench_index")?,
+        }),
+        _ => Err(sqlx::Error::Decode(
+            "invalid seat in assignments".to_owned().into(),
+        )),
+    }
+}
+
+/// Placements de l'événement, groupes en sommeil compris, triés par groupe, puis le banc par rang
+/// (`party` nul trié en tête), puis les titulaires par équipe et slot. L'appelant ne compte pas sur
+/// cet ordre : `domain::placement::warnings` retrie.
+pub async fn assignments(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+) -> Result<Vec<AssignmentRow>, sqlx::Error> {
+    let rows: Vec<AssignmentColumns> = sqlx::query_as(
+        "SELECT candidature_id, group_id, party, party_index, bench_index FROM assignments \
+         WHERE event_id = ? ORDER BY group_id, party, party_index, bench_index",
+    )
+    .bind(event_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    rows.into_iter()
+        .map(
+            |(candidature_id, group_id, party, party_index, bench_index)| {
+                Ok(AssignmentRow {
+                    candidature_id,
+                    group_id,
+                    seat: seat(party, party_index, bench_index)?,
+                })
+            },
+        )
+        .collect()
+}
+
+/// Remplace le placement des groupes retenus (`apply_placement`, seul writer, AD-4) : supprime les
+/// lignes des groupes retenus de l'événement, puis toute ligne d'une candidature de `placements`
+/// (un groupe en sommeil la perd, `UNIQUE(candidature_id)`), puis insère `placements`. Les autres
+/// lignes des groupes en sommeil restent. Dans la transaction de la commande.
+pub async fn replace_assignments(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+    placements: &[Placement],
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "DELETE FROM assignments WHERE event_id = ?1 AND group_id IN \
+         (SELECT id FROM groups WHERE event_id = ?1 AND retained = 1)",
+    )
+    .bind(event_id)
+    .execute(&mut *conn)
+    .await?;
+    for p in placements {
+        sqlx::query("DELETE FROM assignments WHERE event_id = ? AND candidature_id = ?")
+            .bind(event_id)
+            .bind(&p.candidature_id)
+            .execute(&mut *conn)
+            .await?;
+    }
+    for p in placements {
+        let (party, party_index, bench_index) = match p.seat {
+            Seat::Starter { party, index } => {
+                (Some(i64::from(party)), Some(i64::from(index)), None)
+            }
+            Seat::Bench { bench_index } => (None, None, Some(i64::from(bench_index))),
+        };
+        sqlx::query(
+            "INSERT INTO assignments (event_id, candidature_id, group_id, party, party_index, \
+             bench_index) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(event_id)
+        .bind(&p.candidature_id)
+        .bind(&p.group_id)
+        .bind(party)
+        .bind(party_index)
+        .bind(bench_index)
+        .execute(&mut *conn)
+        .await?;
+    }
     Ok(())
 }

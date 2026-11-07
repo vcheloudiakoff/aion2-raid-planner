@@ -5,9 +5,13 @@
 // l'ordre de création, chaque ligne ouvre sa feuille (accepter, refuser, copier `Pseudo[SRV]`).
 // Disponibilités montre la grille joueurs × créneaux (`AvailabilityGrid`), nourrie par la même
 // relecture, dont les lignes ouvrent la même feuille, et, en `open`, « Verrouiller » ouvre la feuille
-// de verrouillage (`LockSheet`). Composition et Salle listent les groupes retenus (story 3-2 :
-// contenu minimal, sans action). Réglages commence par « Ton lien d'organisateur » à copier pour changer
-// d'appareil, puis `EventSettings` règle l'événement, ses créneaux et son annulation et propose
+// de verrouillage (`LockSheet`). Composition (`Composition`, chargée à la demande dans un chunk à
+// part, avec un squelette en attendant) place titulaires et banc des groupes retenus : le brouillon
+// vit ici, pour survivre à un changement d'onglet, avec sa vue de base pour le bandeau « N
+// candidatures ont changé » ; une relecture ne l'écrase jamais, « Enregistrer » envoie le placement
+// complet, un refus le garde. Salle liste les groupes retenus (contenu en story 3-4). Réglages
+// commence par « Ton lien d'organisateur » à copier pour changer d'appareil, puis `EventSettings`
+// règle l'événement, ses créneaux et son annulation et propose
 // « Dupliquer » ; raid annulé, l'onglet est en lecture seule. Le lien est gardé sur cet appareil à la
 // première lecture ; si le navigateur ne peut pas le garder, la page le dit quel que soit l'onglet, en
 // renvoyant à Réglages pour le copier. Relecture silencieuse toutes les 10 s, feuille ouverte
@@ -17,12 +21,23 @@
 // requêtes. Le secret part en en-tête seulement ; il n'apparaît dans la page que dans la puce de
 // Réglages, jamais dans `document.title`.
 
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { useParams } from "react-router";
 import { ApiError } from "../api/client";
 import { eventLinks, forgetSecret, saveOrganizerLink } from "../api/links";
 import {
   addSlot,
+  applyPlacement,
   cancelEvent,
   getOrganizerView,
   lockEvent,
@@ -48,7 +63,12 @@ import { GroupList } from "../components/GroupList";
 import { LockSheet } from "../components/LockSheet";
 import { t, useLang } from "../i18n";
 import { errorText, type Fields } from "../lib/form";
+import { bodyOf, changedCount, type Draft, type Placement, type Seat } from "../lib/placement";
+import type { SeatError } from "../components/Composition";
 import { REFRESH_MS } from "./EventPage";
+
+/** Onglet Composition, chargé à la demande : rien de ce module n'est importé statiquement ici. */
+const Composition = lazy(() => import("../components/Composition"));
 
 /** Durée du liseré or d'une nouvelle candidature. */
 export const FRESH_MS = 3000;
@@ -65,8 +85,9 @@ const STATE_CODES = new Set([
   "event.no_upcoming_slot",
 ]);
 
-/** Commande en vol : une décision de la feuille, un verrouillage, ou un geste de l'onglet Réglages. */
-type Pending = Decision | SettingsCommand | "lock";
+/** Commande en vol : une décision de la feuille, un verrouillage, un placement, ou un geste de
+ * l'onglet Réglages. */
+type Pending = Decision | SettingsCommand | "lock" | "placement";
 
 type Tab = "candidatures" | "availability" | "composition" | "room" | "settings";
 const OPEN_TABS: readonly Tab[] = ["candidatures", "availability", "settings"];
@@ -109,6 +130,14 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
   const [lockError, setLockError] = useState<string | null>(null);
   const lockTrigger = useRef<HTMLElement | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Brouillon de composition : créé au premier geste, gardé d'un onglet à l'autre, jamais écrasé
+   * par une relecture ; effacé au changement de secret. */
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [placementError, setPlacementError] = useState<string | null>(null);
+  /** Places désignées par les champs du dernier refus structurel. */
+  const [seatErrors, setSeatErrors] = useState<SeatError[]>([]);
+  /** Le brouillon a été abandonné parce que le raid a changé sous lui (déverrouillage, groupes). */
+  const [draftDropped, setDraftDropped] = useState(false);
   const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
   /** Faux si `saveOrganizerLink` n'a pas pu écrire : ce navigateur ne gardera pas le lien. */
   const [stored, setStored] = useState(true);
@@ -194,6 +223,10 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
     setOpenId(null);
     setLockOpen(false);
     setGridChoice(INITIAL_GRID_CHOICE);
+    setDraft(null);
+    setPlacementError(null);
+    setSeatErrors([]);
+    setDraftDropped(false);
     setPending(null);
     setSheetError(null);
     setActionError(null);
@@ -325,6 +358,77 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
     return outcome.fields;
   }
 
+  /** Premier geste : le brouillon commence sur la vue affichée, sa base pour le bandeau. Un geste
+   * efface les places d'un refus précédent : leurs rangs ne valent plus. */
+  const editPlacement = useCallback(
+    (placement: Placement) => {
+      setDraft((d) => (d ? { ...d, placement } : view ? { base: view, placement } : null));
+      setDraftDropped(false);
+      setSeatErrors([]);
+      setPlacementError(null);
+    },
+    [view],
+  );
+
+  // Le raid a changé sous le brouillon (déverrouillé, annulé, ou autres groupes retenus) : ses
+  // groupes ne valent plus, il est abandonné, et la page le dit.
+  useEffect(() => {
+    if (!draft || !view) return;
+    const retained = (v: OrganizerEvent) =>
+      v.groups
+        .filter((g) => g.retained)
+        .map((g) => g.id)
+        .sort()
+        .join(",");
+    if (view.event.status !== "locked" || retained(view) !== retained(draft.base)) {
+      setDraft(null);
+      setPlacementError(null);
+      setSeatErrors([]);
+      setDraftDropped(true);
+    }
+  }, [draft, view]);
+
+  /** « Enregistrer » : le placement complet du brouillon. Un refus garde le brouillon ; un refus
+   * structurel désigne ses places par l'ordre du corps envoyé (`placements.N.<champ>`). */
+  async function savePlacement() {
+    if (!draft) return;
+    setPlacementError(null);
+    setSeatErrors([]);
+    const body = bodyOf(draft.placement);
+    const outcome = await command("placement", () => applyPlacement(secret, body));
+    if (outcome.ok) {
+      setDraft(null);
+      return;
+    }
+    // Structure refusée (une candidature n'est plus acceptée…), réseau, quota : près du bouton.
+    if (!outcome.handled) setPlacementError(errorText(outcome.code));
+    const seats: SeatError[] = [];
+    for (const [path, code] of Object.entries(outcome.fields ?? {})) {
+      const entry = body[Number(/^placements\.(\d+)\./.exec(path)?.[1] ?? NaN)];
+      if (!entry) continue;
+      const seat: Seat =
+        "benchIndex" in entry
+          ? { groupId: entry.groupId, bench: entry.benchIndex - 1 }
+          : { groupId: entry.groupId, party: entry.party, index: entry.index };
+      seats.push({ seat, message: errorText(code) });
+    }
+    setSeatErrors(seats);
+  }
+
+  function discardDraft() {
+    setDraft(null);
+    setPlacementError(null);
+    setSeatErrors([]);
+  }
+
+  /** « Voir » : le brouillon est abandonné et la vue relue. */
+  function seeChanges() {
+    discardDraft();
+    if (!busyRef.current) reloadRef.current();
+  }
+
+  const changed = useMemo(() => (draft && view ? changedCount(draft.base, view) : 0), [draft, view]);
+
   const status = view?.event.status;
   const TABS = status === "locked" ? LOCKED_TABS : OPEN_TABS;
   // Onglet que la vue dit absent (déverrouillage, relu ou pas) : l'affichage revient sur
@@ -423,6 +527,11 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
           {t("event.cancelled")}
         </p>
       )}
+      {draftDropped && (
+        <p role="status" data-testid="draft-dropped" className="mt-4 text-label text-ink-secondary">
+          {t("composition.dropped")}
+        </p>
+      )}
       {actionError && (
         <p role="alert" data-testid="action-error" className="mt-4 text-label text-danger">
           {actionError}
@@ -460,7 +569,31 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
             busy={pending !== null}
           />
         ) : shownTab === "composition" ? (
-          <GroupList view={view} title={t("organizer.tab.composition")} testId="composition" />
+          <Suspense
+            fallback={
+              <div data-testid="composition-loading" aria-busy="true" className="mt-4">
+                <div className="h-tap w-1/2 rounded-sm bg-surface-sunken" />
+                <div className="mt-3 h-[52px] rounded-md bg-surface-sunken" />
+                <div className="mt-1 h-[52px] rounded-md bg-surface-sunken" />
+              </div>
+            }
+          >
+            <Composition
+              view={view}
+              reference={reference}
+              draft={draft?.placement ?? null}
+              onEdit={editPlacement}
+              onSave={() => void savePlacement()}
+              onDiscard={discardDraft}
+              onSee={seeChanges}
+              changed={changed}
+              saving={pending === "placement"}
+              busy={pending !== null}
+              error={placementError}
+              seatErrors={seatErrors}
+              fallbackFocus={heading}
+            />
+          </Suspense>
         ) : shownTab === "room" ? (
           <GroupList view={view} title={t("organizer.tab.room")} testId="room" />
         ) : (

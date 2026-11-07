@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetClientForTests } from "./client";
 import {
   addSlot,
+  applyPlacement,
   cancelEvent,
   getOrganizerView,
   lockEvent,
@@ -106,5 +107,20 @@ describe("organizer api", () => {
       expect(String(c.init?.body ?? "")).not.toContain(SECRET);
     }
     expect(calls.map((c) => JSON.parse(String(c.init?.body)))).toEqual([{ slotIds: [A, A, B] }, {}]);
+  });
+
+  it("sends the full placement in the body, ids never in the URL, the secret in the header only", async () => {
+    const calls = serve();
+    const [C, D, G] = ["c".repeat(22), "d".repeat(22), "g".repeat(22)];
+    const placements = [
+      { candidatureId: C, groupId: G, party: 2, index: 5 },
+      { candidatureId: D, groupId: G, benchIndex: 1 },
+    ];
+    await applyPlacement(SECRET, placements);
+    expect(calls.map((c) => [c.init?.method, c.url])).toEqual([["POST", "/api/organizer/placement"]]);
+    expect(headers(calls[0])["X-Link-Secret"]).toBe(SECRET);
+    for (const id of [SECRET, C, D, G]) expect(calls[0].url).not.toContain(id);
+    expect(String(calls[0].init?.body)).not.toContain(SECRET);
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ placements });
   });
 });

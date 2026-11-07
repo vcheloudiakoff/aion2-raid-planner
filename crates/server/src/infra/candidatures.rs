@@ -247,3 +247,19 @@ pub async fn set_status(
         .await?;
     Ok(())
 }
+
+/// Id et statut de chaque candidature de l'événement, tous statuts : ce que `apply_placement`
+/// vérifie d'un placement. Lue dans la transaction de la commande.
+pub async fn statuses(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+) -> Result<Vec<(String, CandidatureStatus)>, sqlx::Error> {
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT id, status FROM candidatures WHERE event_id = ?")
+            .bind(event_id)
+            .fetch_all(&mut *conn)
+            .await?;
+    rows.into_iter()
+        .map(|(id, s)| Ok((id, decode(CandidatureStatus::parse(&s), "status")?)))
+        .collect()
+}

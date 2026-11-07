@@ -619,6 +619,9 @@ describe("groups and unlock", () => {
     partySize: 5,
     roomLabel: "I1",
     roomName: `I1-${id}`,
+    starters: [],
+    bench: [],
+    classWarnings: {},
   });
   const message = () => document.getElementById(dialog()!.getAttribute("aria-labelledby")!)!.textContent;
   const unlockButton = () => q<HTMLButtonElement>('[data-testid="settings-unlock"] button');
