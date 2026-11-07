@@ -230,5 +230,6 @@
   "errors.slot.duplicate": "Deux créneaux tombent à la même heure.",
   "errors.slot.duration_out_of_range": "La durée va de 15 min à 12 h.",
   "errors.slot.in_past": "Ce créneau est déjà passé.",
-  "errors.slot.not_found": "Ce créneau n'existe plus."
+  "errors.slot.not_found": "Ce créneau n'existe plus.",
+  "organizer.joinMissing": "Le lien direct n'est gardé que dans le navigateur qui a créé le raid."
 }

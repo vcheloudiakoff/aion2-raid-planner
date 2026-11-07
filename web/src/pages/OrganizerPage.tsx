@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useParams } from "react-router";
 import { ApiError } from "../api/client";
-import { forgetSecret, saveOrganizerLink } from "../api/links";
+import { eventLinks, forgetSecret, saveOrganizerLink } from "../api/links";
 import {
   addSlot,
   cancelEvent,
@@ -314,6 +314,7 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
   const tabId = (id: Tab) => `${ids}-tab-${id}`;
   const panelId = (id: Tab) => `${ids}-panel-${id}`;
 
+  const joinSecret = view ? eventLinks(view.event.id)?.join : undefined;
   return (
     <main className={main}>
       <h1 ref={heading} tabIndex={-1} className="text-title outline-none">
@@ -387,6 +388,26 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
               <div className="mt-2">
                 <CopyChip value={`${origin}/o/${secret}`} label={t("links.organizer")} />
               </div>
+            </section>
+            {/* Les deux autres liens, à reposter : le public se déduit de l'id ; le direct n'existe
+                qu'en `links.v1` (le serveur n'en garde que l'empreinte), donc sur l'appareil créateur. */}
+            <section data-testid="public-link" className="mt-4">
+              <h2 className="text-label">{t("links.public")}</h2>
+              <p className="mt-1 text-meta text-ink-secondary">{t("links.publicHint")}</p>
+              <div className="mt-2">
+                <CopyChip value={`${origin}/e/${view.event.id}`} label={t("links.public")} />
+              </div>
+            </section>
+            <section data-testid="join-link" className="mt-4">
+              <h2 className="text-label">{t("links.join")}</h2>
+              <p className="mt-1 text-meta text-ink-secondary">{t("links.joinHint")}</p>
+              {joinSecret ? (
+                <div className="mt-2">
+                  <CopyChip value={`${origin}/j/${joinSecret}`} label={t("links.join")} />
+                </div>
+              ) : (
+                <p className="mt-2 text-meta text-ink-secondary">{t("organizer.joinMissing")}</p>
+              )}
             </section>
             <EventSettings
               view={view}

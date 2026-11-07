@@ -230,5 +230,6 @@
   "errors.slot.duplicate": "Two slots start at the same time.",
   "errors.slot.duration_out_of_range": "Length goes from 15 min to 12 h.",
   "errors.slot.in_past": "This slot is already over.",
-  "errors.slot.not_found": "This slot doesn't exist anymore."
+  "errors.slot.not_found": "This slot doesn't exist anymore.",
+  "organizer.joinMissing": "The direct link is only kept in the browser that created the raid."
 }

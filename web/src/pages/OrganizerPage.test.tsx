@@ -817,6 +817,27 @@ describe("local links", () => {
     expect(document.title).not.toContain(ORGANIZER);
   });
 
+  it("shows the public link, and the direct link kept on this device", async () => {
+    localStorage.setItem(LINKS_KEY, JSON.stringify({ [EVENT_ID]: { organizer: ORGANIZER, join: JOIN, participants: {} } }));
+    serve(() => json(organizerEvent));
+    await render();
+    click(tabs()[1]);
+    expect(q('[data-testid="public-link"] button')!.textContent).toBe(`${window.location.origin}/e/${EVENT_ID}`);
+    expect(q('[data-testid="join-link"] button')!.textContent).toBe(`${window.location.origin}/j/${JOIN}`);
+  });
+
+  it("says where the direct link lives when this device does not have it", async () => {
+    localStorage.removeItem(LINKS_KEY);
+    serve(() => json(organizerEvent));
+    await render();
+    click(tabs()[1]);
+    expect(q('[data-testid="public-link"] button')!.textContent).toBe(`${window.location.origin}/e/${EVENT_ID}`);
+    expect(q('[data-testid="join-link"] button')).toBeNull();
+    expect(q('[data-testid="join-link"]')!.textContent).toContain(
+      "Le lien direct n'est gardé que dans le navigateur qui a créé le raid.",
+    );
+  });
+
   it("offers the link on a cancelled raid too", async () => {
     serve(() => json(viewWith({}, { status: "cancelled" })));
     await render();
