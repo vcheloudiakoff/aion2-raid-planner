@@ -6,7 +6,16 @@ import { resetClientForTests } from "./api/client";
 import { REFERENCE_CACHE_KEY } from "./api/reference";
 import { resetLangForTests } from "./i18n";
 import { byText, mount, type Mounted } from "./test/dom";
-import { EVENT_ID, JOIN, ORGANIZER, PARTICIPANT, participantView, publicEvent, reference } from "./test/fixtures";
+import {
+  EVENT_ID,
+  JOIN,
+  ORGANIZER,
+  PARTICIPANT,
+  organizerEvent,
+  participantView,
+  publicEvent,
+  reference,
+} from "./test/fixtures";
 
 let m: Mounted | null = null;
 
@@ -147,12 +156,33 @@ describe("routes", () => {
     expect(m.container.textContent).toContain("Classe Soin");
   });
 
-  it("serves the pending organizer page on /o/<secret>, secret shown nowhere", () => {
+  it("serves the organizer page on /o/<secret>, secret in the header and out of the page and title", async () => {
     lang("fr-FR");
-    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    localStorage.setItem(
+      REFERENCE_CACHE_KEY,
+      JSON.stringify({ etag: '"e"', data: reference, fetchedAt: "2026-11-06T20:04:00Z" }),
+    );
+    const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url === "/api/organizer") {
+        return new Response(JSON.stringify(organizerEvent), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetch);
     window.history.pushState({}, "", `/o/${ORGANIZER}`);
     m = mount(<App />);
-    expect(byText(m.container, "Ton raid est publié")).toBeTruthy();
+    await flush();
+    expect(m.container.querySelector("h1")?.textContent).toMatch(/^Instance Une · /);
+    expect(m.container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Candidatures");
+    expect(m.container.querySelectorAll('[data-testid="candidatures"] li')).toHaveLength(
+      organizerEvent.candidatures.length,
+    );
+    const read = fetch.mock.calls.find(([url]) => url === "/api/organizer")!;
+    expect((read[1]?.headers as Record<string, string>)["X-Link-Secret"]).toBe(ORGANIZER);
+    expect(fetch.mock.calls.some(([url]) => String(url).includes(ORGANIZER))).toBe(false);
     expect(m.container.textContent).not.toContain(ORGANIZER);
     expect(document.title).not.toContain(ORGANIZER);
   });

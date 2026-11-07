@@ -6,7 +6,6 @@ import { resetLangForTests } from "../i18n";
 import { byText, click, mount, type Mounted } from "../test/dom";
 import { ORGANIZER, created } from "../test/fixtures";
 import { LinksCreated } from "./LinksCreated";
-import { OrganizerPending } from "./OrganizerPending";
 
 const ORIGIN = "https://raid.example.org";
 let m: Mounted;
@@ -16,7 +15,7 @@ function render(stored = true) {
     <MemoryRouter initialEntries={["/new"]}>
       <Routes>
         <Route path="/new" element={<LinksCreated created={created} stored={stored} origin={ORIGIN} />} />
-        <Route path="/o/:secret" element={<OrganizerPending />} />
+        <Route path="/o/:secret" element={<p>organizer page</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -110,7 +109,7 @@ describe("links created", () => {
     click(box);
     expect(openButton().disabled).toBe(false);
     click(openButton());
-    expect(byText(m.container, "Ton raid est publié")).toBeTruthy();
+    expect(byText(m.container, "organizer page")).toBeTruthy();
     expect(m.container.textContent).not.toContain(ORGANIZER);
   });
 

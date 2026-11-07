@@ -179,3 +179,50 @@ export interface ParticipantView {
   event: PublicEvent;
   discordUrl?: string;
 }
+
+/** Lien par lequel une candidature est arrivée : `/j/` direct, `/e/` public. */
+export type Origin = "direct" | "public";
+
+/** Un créneau coché par une candidature, et sa préférence. */
+export interface Availability {
+  slotId: string;
+  preferred: boolean;
+}
+
+/** Une candidature vue par l'organisateur. `pseudoSrv` est composé par le serveur, jamais par le
+ * client (AD-6) ; `role` est le rôle de la classe, ou l'id de la classe si la référence ne la connaît
+ * plus. `duplicate` signale un autre `pending` ou `accepted` au même pseudo et au même serveur. */
+export interface OrganizerCandidature {
+  id: string;
+  pseudo: string;
+  server: string;
+  pseudoSrv: string;
+  class: string;
+  role: string;
+  cp: number;
+  status: CandidatureStatus;
+  origin: Origin;
+  /** Triées par début de créneau, créneaux passés compris. */
+  availabilities: Availability[];
+  duplicate: boolean;
+}
+
+/** `GET /api/organizer` et réponse des commandes de l'organisateur, sous son lien `/o/`. `discordUrl`
+ * présent seulement si l'événement a un lien ; `slot.hasGroups` arrive avec les groupes (epic 3). */
+export interface OrganizerEvent {
+  event: PublicEvent;
+  discordUrl?: string;
+  /** `classId → bornes`, une entrée par classe bornée de l'événement. */
+  classBounds: Record<string, { min: number; max: number }>;
+  /** Ordre de création, jamais réordonnées. */
+  candidatures: OrganizerCandidature[];
+}
+
+/** Statut que l'organisateur peut demander. */
+export type Decision = "accepted" | "rejected";
+
+/** Corps de `POST /api/organizer/candidature-status`. */
+export interface SetCandidatureStatus {
+  candidatureId: string;
+  status: Decision;
+}

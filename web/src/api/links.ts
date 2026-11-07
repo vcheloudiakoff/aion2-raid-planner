@@ -90,6 +90,15 @@ export function saveOrganizerLinks(eventId: string, secrets: { organizer: string
   });
 }
 
+/** Garde le lien organisateur d'un événement ouvert depuis `/o/`, sans toucher au reste : un lien
+ * direct déjà gardé reste. */
+export function saveOrganizerLink(eventId: string, secret: string): boolean {
+  if (!isSecret(secret)) return false;
+  return update(eventId, (entry) => {
+    entry.organizer = secret;
+  });
+}
+
 /** Garde le lien participant d'une candidature, sans toucher au reste. */
 export function saveParticipantLink(eventId: string, candidatureId: string, secret: string): boolean {
   if (!isPublicId(candidatureId) || !isSecret(secret)) return false;

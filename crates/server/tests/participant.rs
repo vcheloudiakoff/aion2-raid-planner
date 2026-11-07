@@ -16,9 +16,6 @@ use server::config::Config;
 const VIEW: &str = "/api/participant";
 const UPDATE: &str = "/api/participant/candidature";
 const WITHDRAW: &str = "/api/participant/withdrawal";
-/// Instant antérieur à `NOW`, posé sur `updated_at` pour voir la commande l'écrire.
-const BEFORE: &str = "2026-11-01T00:00:00Z";
-
 async fn setup_with(name: &str, config: &Config) -> (AppState, axum::Router) {
     candidature_setup(&format!("participant_{name}"), config).await
 }
@@ -33,72 +30,6 @@ async fn setup(name: &str) -> (AppState, axum::Router) {
         ]),
     )
     .await
-}
-
-/// Candidature déposée par l'API ; `direct` = par le lien `/j/` (`accepted`).
-struct Cand {
-    id: String,
-    secret: String,
-}
-
-async fn candidate(
-    state: &AppState,
-    router: &axum::Router,
-    e: &Event,
-    pseudo: &str,
-    direct: bool,
-) -> Cand {
-    let body = with(nominal(state, e), json!({ "pseudo": pseudo }));
-    let (res, text) = if direct {
-        post_json_with(
-            router,
-            "/api/join/candidatures",
-            &body,
-            &[("x-link-secret", &e.join)],
-        )
-        .await
-    } else {
-        post_json(router, &format!("/api/events/{}/candidatures", e.id), &body).await
-    };
-    assert_eq!(res.status(), StatusCode::CREATED, "{text}");
-    let v: Value = serde_json::from_str(&text).unwrap();
-    let c = Cand {
-        id: v["candidatureId"].as_str().unwrap().into(),
-        secret: v["participantSecret"].as_str().unwrap().into(),
-    };
-    sqlx::query("UPDATE candidatures SET updated_at = ? WHERE id = ?")
-        .bind(BEFORE)
-        .bind(&c.id)
-        .execute(&state.db.write)
-        .await
-        .unwrap();
-    c
-}
-
-async fn sql(state: &AppState, query: &str, binds: &[&str]) {
-    let mut q = sqlx::query(query);
-    for b in binds {
-        q = q.bind(*b);
-    }
-    q.execute(&state.db.write).await.unwrap();
-}
-
-async fn set_event_status(state: &AppState, e: &Event, status: &str) {
-    sql(
-        state,
-        "UPDATE events SET status = ? WHERE id = ?",
-        &[status, &e.id],
-    )
-    .await;
-}
-
-async fn set_status(state: &AppState, c: &Cand, status: &str) {
-    sql(
-        state,
-        "UPDATE candidatures SET status = ? WHERE id = ?",
-        &[status, &c.id],
-    )
-    .await;
 }
 
 fn secret(c: &Cand) -> [(&'static str, &str); 1] {

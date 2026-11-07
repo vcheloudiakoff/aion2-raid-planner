@@ -6,6 +6,7 @@ import {
   forgetEvent,
   forgetParticipant,
   readLinks,
+  saveOrganizerLink,
   saveOrganizerLinks,
   saveParticipantLink,
 } from "./links";
@@ -49,6 +50,18 @@ describe("links", () => {
     expect(eventLinks(F)).toBeUndefined();
     expect(forgetEvent(E)).toBe(true);
     expect(readLinks()).toEqual({});
+  });
+
+  it("saves the organizer link alone and keeps an existing direct link", () => {
+    expect(saveOrganizerLink(E, secret("o"))).toBe(true);
+    expect(eventLinks(E)).toEqual({ organizer: secret("o"), participants: {} });
+    saveOrganizerLinks(F, { organizer: secret("o"), join: secret("j") });
+    saveParticipantLink(F, C, secret("p"));
+    expect(saveOrganizerLink(F, secret("q"))).toBe(true);
+    expect(eventLinks(F)).toEqual({ organizer: secret("q"), join: secret("j"), participants: { [C]: secret("p") } });
+    expect(saveOrganizerLink("short", secret("o"))).toBe(false);
+    expect(saveOrganizerLink(D, `${secret("o").slice(1)}+`)).toBe(false);
+    expect(eventLinks(D)).toBeUndefined();
   });
 
   it("refuses malformed ids and secrets", () => {
@@ -97,6 +110,7 @@ describe("links", () => {
     expect(readLinks()).toEqual({});
     expect(eventLinks(E)).toBeUndefined();
     expect(saveOrganizerLinks(E, { organizer: secret("o"), join: secret("j") })).toBe(false);
+    expect(saveOrganizerLink(E, secret("o"))).toBe(false);
     expect(saveParticipantLink(E, C, secret("p"))).toBe(false);
     expect(forgetParticipant(E, C)).toBe(false);
     expect(forgetEvent(E)).toBe(false);

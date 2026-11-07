@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use axum::http::StatusCode;
 use axum::http::header::{CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 use axum::response::{IntoResponse, Response};
-use domain::candidature::{CandidatureError, ParticipantRefusal};
+use domain::candidature::{CandidatureError, OrganizerRefusal, ParticipantRefusal};
 use domain::event::EventError;
 use serde::Serialize;
 
@@ -58,6 +58,7 @@ codes! {
     CandidatureFactionOutOfScope => "candidature.faction_out_of_scope", BAD_REQUEST;
     CandidatureLimitReached => "candidature.limit_reached", CONFLICT;
     CandidatureNoAvailability => "candidature.no_availability", BAD_REQUEST;
+    CandidatureNotFound => "candidature.not_found", NOT_FOUND;
     CandidaturePreferenceNotAvailable => "candidature.preference_not_available", BAD_REQUEST;
     CandidaturePseudoInvalid => "candidature.pseudo_invalid", BAD_REQUEST;
     CandidatureServerOutOfRegion => "candidature.server_out_of_region", BAD_REQUEST;
@@ -160,6 +161,15 @@ impl From<ParticipantRefusal> for Code {
             ParticipantRefusal::Withdrawn => Code::CandidatureWithdrawn,
             ParticipantRefusal::EventLocked => Code::EventLocked,
             ParticipantRefusal::TransitionForbidden => Code::CandidatureTransitionForbidden,
+        }
+    }
+}
+
+impl From<OrganizerRefusal> for Code {
+    fn from(r: OrganizerRefusal) -> Self {
+        match r {
+            OrganizerRefusal::EventClosed => Code::EventClosed,
+            OrganizerRefusal::TransitionForbidden => Code::CandidatureTransitionForbidden,
         }
     }
 }
@@ -460,6 +470,22 @@ mod tests {
             assert_eq!(Code::from(r), code);
             assert_eq!(code.status(), StatusCode::CONFLICT, "{code}");
         }
+    }
+
+    #[test]
+    fn every_organizer_refusal_is_a_conflict_and_a_foreign_candidature_is_404() {
+        for (r, code) in [
+            (OrganizerRefusal::EventClosed, Code::EventClosed),
+            (
+                OrganizerRefusal::TransitionForbidden,
+                Code::CandidatureTransitionForbidden,
+            ),
+        ] {
+            assert_eq!(Code::from(r), code);
+            assert_eq!(code.status(), StatusCode::CONFLICT, "{code}");
+        }
+        assert_eq!(Code::CandidatureNotFound.as_str(), "candidature.not_found");
+        assert_eq!(Code::CandidatureNotFound.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

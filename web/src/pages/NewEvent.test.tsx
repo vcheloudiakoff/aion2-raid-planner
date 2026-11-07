@@ -12,7 +12,6 @@ import { byText, click, fill, mount, type Mounted } from "../test/dom";
 import { EVENT_ID, JOIN, ORGANIZER, created, reference } from "../test/fixtures";
 import type { ReferenceSet } from "../api/types";
 import { NewEvent } from "./NewEvent";
-import { OrganizerPending } from "./OrganizerPending";
 
 let m: Mounted;
 type Call = { url: string; init?: RequestInit };
@@ -57,7 +56,7 @@ function render(ref: ReferenceSet = reference) {
     <MemoryRouter initialEntries={["/new"]}>
       <Routes>
         <Route path="/new" element={<NewEvent reference={ref} />} />
-        <Route path="/o/:secret" element={<OrganizerPending />} />
+        <Route path="/o/:secret" element={<p>organizer page</p>} />
       </Routes>
     </MemoryRouter>,
   );

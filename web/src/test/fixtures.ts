@@ -1,5 +1,13 @@
 // Données de test partagées : valeurs fictives, jamais la référence réelle.
-import type { CreatedCandidature, CreatedEvent, ParticipantView, PublicEvent, ReferenceSet } from "../api/types";
+import type {
+  CreatedCandidature,
+  CreatedEvent,
+  OrganizerCandidature,
+  OrganizerEvent,
+  ParticipantView,
+  PublicEvent,
+  ReferenceSet,
+} from "../api/types";
 
 export const reference: ReferenceSet = {
   regions: [
@@ -104,4 +112,86 @@ export const participantView: ParticipantView = {
     { slotId: "slot_a", preferred: true },
   ],
   event: publicEvent,
+};
+
+/** Ids de candidature de la vue organisateur, dans l'ordre de création. */
+export const NYRA = "N".repeat(21) + "1";
+export const KAEL = "K".repeat(21) + "2";
+export const NYRA_TWIN = "M".repeat(21) + "3";
+export const TOMA = "T".repeat(21) + "4";
+export const LIO = "L".repeat(21) + "5";
+
+const candidature = (patch: Partial<OrganizerCandidature> & Pick<OrganizerCandidature, "id">): OrganizerCandidature => ({
+  pseudo: "Nyra",
+  server: "s_a",
+  pseudoSrv: "Nyra[SA]",
+  class: "c1",
+  role: "healer",
+  cp: 1500,
+  status: "pending",
+  origin: "public",
+  availabilities: [],
+  duplicate: false,
+  ...patch,
+});
+
+/** Vue organisateur : une candidature par statut, et deux `Nyra[SA]` signalées en doublon. */
+export const organizerEvent: OrganizerEvent = {
+  event: publicEvent,
+  discordUrl: "https://discord.gg/abcdef",
+  classBounds: { c1: { min: 1, max: 3 }, c2: { min: 1, max: 10 } },
+  candidatures: [
+    candidature({
+      id: NYRA,
+      availabilities: [
+        { slotId: "slot_past", preferred: false },
+        { slotId: "slot_a", preferred: true },
+      ],
+      duplicate: true,
+    }),
+    candidature({
+      id: KAEL,
+      pseudo: "Kael",
+      server: "s_e",
+      pseudoSrv: "Kael[SE]",
+      class: "c2",
+      role: "dps",
+      cp: 2300,
+      status: "accepted",
+      origin: "direct",
+      availabilities: [
+        { slotId: "slot_a", preferred: false },
+        { slotId: "slot_b", preferred: true },
+      ],
+    }),
+    candidature({
+      id: NYRA_TWIN,
+      pseudo: "nyra",
+      pseudoSrv: "nyra[SA]",
+      cp: 1400,
+      status: "accepted",
+      origin: "direct",
+      availabilities: [{ slotId: "slot_b", preferred: false }],
+      duplicate: true,
+    }),
+    candidature({
+      id: TOMA,
+      pseudo: "Toma",
+      server: "s_e",
+      pseudoSrv: "Toma[SE]",
+      class: "c2",
+      role: "dps",
+      cp: 900,
+      status: "rejected",
+      availabilities: [{ slotId: "slot_a", preferred: false }],
+    }),
+    candidature({
+      id: LIO,
+      pseudo: "Lio",
+      pseudoSrv: "Lio[SA]",
+      cp: 1100,
+      status: "withdrawn",
+      availabilities: [{ slotId: "slot_b", preferred: false }],
+    }),
+  ],
 };

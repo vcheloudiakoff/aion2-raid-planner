@@ -1,5 +1,5 @@
-//! Aides partagées par les tests de candidature (stories 2-2 et 2-3) : événement créé par l'API,
-//! corps nominal, erreurs de champ. Valeurs fictives.
+//! Aides partagées par les tests de candidature (stories 2-2 à 2-4) : événement créé par l'API,
+//! corps nominal, candidature déposée, états forcés en SQL, erreurs de champ. Valeurs fictives.
 
 use axum::http::StatusCode;
 use domain::Timestamp;
@@ -140,4 +140,87 @@ pub fn assert_fields(
     let v: Value = serde_json::from_str(body).unwrap();
     assert_eq!(v["code"], code, "{body}");
     assert_eq!(v["fields"], fields, "{body}");
+}
+
+/// Instant antérieur à `NOW`, posé sur `updated_at` pour voir une commande l'écrire.
+pub const BEFORE: &str = "2026-11-01T00:00:00Z";
+
+/// Candidature déposée par l'API.
+pub struct Cand {
+    pub id: String,
+    pub secret: String,
+}
+
+/// Candidature `pseudo` déposée par l'API avec le corps [`nominal`] ; `direct` = par le lien `/j/`
+/// (`accepted`), sinon par `/e/` (`pending`). `updated_at` est ramené à [`BEFORE`].
+pub async fn candidate(
+    state: &AppState,
+    router: &axum::Router,
+    e: &Event,
+    pseudo: &str,
+    direct: bool,
+) -> Cand {
+    candidate_with(state, router, e, json!({ "pseudo": pseudo }), direct).await
+}
+
+/// Comme [`candidate`], avec `patch` sur le corps nominal.
+pub async fn candidate_with(
+    state: &AppState,
+    router: &axum::Router,
+    e: &Event,
+    patch: Value,
+    direct: bool,
+) -> Cand {
+    let body = with(nominal(state, e), patch);
+    let (res, text) = if direct {
+        post_json_with(
+            router,
+            "/api/join/candidatures",
+            &body,
+            &[("x-link-secret", &e.join)],
+        )
+        .await
+    } else {
+        post_json(router, &format!("/api/events/{}/candidatures", e.id), &body).await
+    };
+    assert_eq!(res.status(), StatusCode::CREATED, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    let c = Cand {
+        id: v["candidatureId"].as_str().unwrap().into(),
+        secret: v["participantSecret"].as_str().unwrap().into(),
+    };
+    sql(
+        state,
+        "UPDATE candidatures SET updated_at = ? WHERE id = ?",
+        &[BEFORE, &c.id],
+    )
+    .await;
+    c
+}
+
+/// Requête d'écriture directe, pour forcer un état que les commandes livrées n'atteignent pas.
+pub async fn sql(state: &AppState, query: &str, binds: &[&str]) {
+    let mut q = sqlx::query(query);
+    for b in binds {
+        q = q.bind(*b);
+    }
+    q.execute(&state.db.write).await.unwrap();
+}
+
+pub async fn set_event_status(state: &AppState, e: &Event, status: &str) {
+    sql(
+        state,
+        "UPDATE events SET status = ? WHERE id = ?",
+        &[status, &e.id],
+    )
+    .await;
+}
+
+pub async fn set_status(state: &AppState, c: &Cand, status: &str) {
+    sql(
+        state,
+        "UPDATE candidatures SET status = ? WHERE id = ?",
+        &[status, &c.id],
+    )
+    .await;
 }

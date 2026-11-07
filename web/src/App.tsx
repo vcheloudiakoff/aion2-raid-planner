@@ -10,7 +10,7 @@ import { t, useLang } from "./i18n";
 import { Home } from "./pages/Home";
 import { EventPage } from "./pages/EventPage";
 import { NewEvent } from "./pages/NewEvent";
-import { OrganizerPending } from "./pages/OrganizerPending";
+import { OrganizerPage } from "./pages/OrganizerPage";
 import { ParticipantPage } from "./pages/ParticipantPage";
 
 export function App() {
@@ -26,8 +26,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/new" element={<NewEvent reference={reference?.data ?? null} />} />
-        {/* Page d'attente, remplacée par la vue organisateur en 2-4. */}
-        <Route path="/o/:secret" element={<OrganizerPending />} />
+        <Route path="/o/:secret" element={<OrganizerPage reference={reference?.data ?? null} />} />
         <Route path="/e/:id" element={<EventPage reference={reference?.data ?? null} mode="public" />} />
         <Route path="/j/:secret" element={<EventPage reference={reference?.data ?? null} mode="join" />} />
         <Route path="/p/:secret" element={<ParticipantPage reference={reference?.data ?? null} />} />

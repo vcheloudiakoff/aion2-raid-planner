@@ -8,7 +8,7 @@ use sqlx::SqliteConnection;
 
 use crate::app::AppState;
 use crate::app::queries::public_event;
-use crate::http::dto::{ParticipantAvailability, ParticipantView};
+use crate::http::dto::{Availability, ParticipantView};
 use crate::http::errors::{Code, Problem};
 use crate::infra::{candidatures, events};
 
@@ -73,7 +73,7 @@ pub async fn load(
         availabilities: c
             .availabilities
             .into_iter()
-            .map(|a| ParticipantAvailability {
+            .map(|a| Availability {
                 slot_id: a.slot_id,
                 preferred: a.preferred,
             })

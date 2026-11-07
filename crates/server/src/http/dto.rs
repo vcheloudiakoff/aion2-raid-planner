@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use domain::Timestamp;
-use domain::candidature::{self as cand, CandidatureStatus};
+use domain::candidature::{self as cand, CandidatureStatus, Decision, Origin};
 use domain::event::{self as ev, EventStatus, FactionScope, Visibility};
 use domain::reference as r;
 use serde::{Deserialize, Serialize};
@@ -413,15 +413,17 @@ pub struct ParticipantView {
     pub cp: u32,
     pub status: CandidatureStatus,
     /// Triées par début de créneau, créneaux passés compris.
-    pub availabilities: Vec<ParticipantAvailability>,
+    pub availabilities: Vec<Availability>,
     pub event: PublicEvent,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discord_url: Option<String>,
 }
 
+/// Un créneau coché par une candidature, et sa préférence. Partagé par les vues participant et
+/// organisateur.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ParticipantAvailability {
+pub struct Availability {
     pub slot_id: String,
     pub preferred: bool,
 }
@@ -429,3 +431,55 @@ pub struct ParticipantAvailability {
 /// Corps de `POST /api/participant/withdrawal` : vide, `{}`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Withdrawal {}
+
+/// Réponse de `GET /api/organizer` et des commandes de l'organisateur, sous son lien `/o/` : tout
+/// le `PublicEvent`, plus ce que seul l'organisateur voit (AD-4 *Données exposées*). `discordUrl`
+/// n'existe que si l'événement a un lien. `slot.hasGroups` arrive avec les groupes (epic 3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrganizerEvent {
+    pub event: PublicEvent,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discord_url: Option<String>,
+    /// `classId → {min, max}`, une entrée par classe bornée de l'événement.
+    pub class_bounds: BTreeMap<String, ClassBound>,
+    /// Ordre de création (`created_at` puis `id`), jamais réordonnées.
+    pub candidatures: Vec<OrganizerCandidature>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassBound {
+    pub min: u32,
+    pub max: u32,
+}
+
+/// Une candidature vue par l'organisateur. `pseudoSrv` est composé par le serveur (AD-6) ; `role`
+/// est le rôle de la classe, ou l'id de la classe si la référence ne la connaît plus. `duplicate`
+/// signale un autre `pending` ou `accepted` au même pseudo (sans casse) et au même serveur.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrganizerCandidature {
+    pub id: String,
+    pub pseudo: String,
+    pub server: String,
+    pub pseudo_srv: String,
+    pub class: String,
+    pub role: String,
+    pub cp: u32,
+    pub status: CandidatureStatus,
+    pub origin: Origin,
+    /// Triées par début de créneau, créneaux passés compris.
+    pub availabilities: Vec<Availability>,
+    pub duplicate: bool,
+}
+
+/// Corps de `POST /api/organizer/candidature-status`. `status` ne vaut que `accepted` ou `rejected` :
+/// toute autre valeur rend le corps illisible (`form.malformed`). L'id vise une candidature que la
+/// commande cherche dans l'événement du lien, jamais ailleurs.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetCandidatureStatus {
+    pub candidature_id: String,
+    pub status: Decision,
+}

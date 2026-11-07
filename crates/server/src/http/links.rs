@@ -16,11 +16,15 @@
 //! - `Participant` sur une route sans `{candidature_id}` : seul l'événement est vérifié ; le handler
 //!   prend la candidature dans `link.candidature_id()`, jamais un id venu du corps de la requête.
 //!
-//! Deux exceptions à la portée par chemin : [`JoinLink`], pour les routes `/api/join*`, et
-//! [`ParticipantLink`], pour les routes `/api/participant*`. Les pages `/j/<secret>` et `/p/<secret>`
-//! ne connaissent que leur secret, qui n'entre jamais dans une URL d'API : la portée vient donc de la
-//! ligne du lien elle-même (l'événement, et la candidature pour `participant`). Seuls ces deux droits
-//! se résolvent ainsi ; les mêmes en-tête, ordre de réponses et silence de journal s'appliquent.
+//! Trois exceptions à la portée par chemin : [`JoinLink`], pour les routes `/api/join*`,
+//! [`ParticipantLink`], pour les routes `/api/participant*`, et [`OrganizerLink`], pour les routes
+//! `/api/organizer*`. Les pages `/j/<secret>`, `/p/<secret>` et `/o/<secret>` ne connaissent que
+//! leur secret, qui n'entre jamais dans une URL d'API : la portée vient donc de la ligne du lien
+//! elle-même (l'événement, et la candidature pour `participant`). Seuls ces trois droits se
+//! résolvent ainsi ; les mêmes en-tête, ordre de réponses et silence de journal s'appliquent. Un id
+//! de candidature venu du corps d'une route organisateur n'est PAS contrôlé ici : la commande le
+//! cherche dans l'événement du lien. Un lien dont l'événement a disparu se résout encore : la
+//! requête ou la commande répond alors `auth.not_found`.
 
 use std::marker::PhantomData;
 
@@ -239,6 +243,35 @@ impl FromRequestParts<AppState> for ParticipantLink {
     }
 }
 
+/// Lien `/o/` résolu sans `event_id` de chemin, pour les routes `/api/organizer*` : l'événement
+/// vient de la ligne du lien, jamais du chemin ni du corps. Un secret d'un autre droit = 403
+/// `auth.wrong_right`. Ne contient pas le secret.
+#[derive(Debug)]
+pub struct OrganizerLink {
+    event_id: String,
+}
+
+impl OrganizerLink {
+    /// Événement organisé.
+    pub fn event_id(&self) -> &str {
+        &self.event_id
+    }
+}
+
+impl FromRequestParts<AppState> for OrganizerLink {
+    type Rejection = Code;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Code> {
+        let row = lookup(parts, state, Right::Organizer).await?;
+        if row.right != Right::Organizer {
+            return Err(Code::AuthWrongRight);
+        }
+        Ok(Self {
+            event_id: row.event_id,
+        })
+    }
+}
+
 impl<R: RequiredRight> FromRequestParts<AppState> for LinkSecret<R> {
     type Rejection = Code;
 
@@ -312,6 +345,10 @@ mod tests {
         format!("{}/{}", link.event_id(), link.candidature_id())
     }
 
+    async fn organizer_link(link: OrganizerLink) -> String {
+        link.event_id().to_owned()
+    }
+
     fn router(state: AppState) -> Router {
         Router::new()
             .route("/api/test/events/{event_id}/organizer", get(organizer))
@@ -324,6 +361,7 @@ mod tests {
             .route("/api/test/no-scope", get(no_scope))
             .route("/api/test/join", get(join_link))
             .route("/api/test/participant", get(participant_link))
+            .route("/api/test/organizer", get(organizer_link))
             .with_state(state)
     }
 
@@ -560,6 +598,44 @@ mod tests {
             .await;
         }
         let good = fx.participant.expose();
+        expect_code(
+            &fx.router,
+            uri,
+            &[("x-link-secret", good), ("x-link-secret", good)],
+            Code::AuthNotFound,
+        )
+        .await;
+        // Ni query string ni cookie : seul l'en-tête compte.
+        expect_code(
+            &fx.router,
+            &format!("{uri}?x-link-secret={good}"),
+            &[("cookie", &format!("X-Link-Secret={good}"))],
+            Code::AuthMissing,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn organizer_link_takes_its_scope_from_the_link_row() {
+        let fx = fixture("organizer_link").await;
+        let uri = "/api/test/organizer";
+        let (status, body) = call(&fx.router, uri, &with(&fx.organizer)).await;
+        assert_eq!((status, body), (StatusCode::OK, fx.e.clone()));
+        for secret in [&fx.join, &fx.participant] {
+            expect_code(&fx.router, uri, &with(secret), Code::AuthWrongRight).await;
+        }
+        expect_code(&fx.router, uri, &[], Code::AuthMissing).await;
+        let unknown = "A".repeat(SECRET_LEN);
+        for value in ["short", unknown.as_str()] {
+            expect_code(
+                &fx.router,
+                uri,
+                &[("x-link-secret", value)],
+                Code::AuthNotFound,
+            )
+            .await;
+        }
+        let good = fx.organizer.expose();
         expect_code(
             &fx.router,
             uri,

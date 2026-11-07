@@ -10,6 +10,7 @@ pub mod form_token;
 pub mod headers;
 pub mod limits;
 pub mod links;
+pub mod organizer;
 pub mod participant;
 pub mod reference;
 
@@ -46,6 +47,7 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
         .route("/events/{event_id}", get(candidatures::get_public_event))
         .route("/join", get(candidatures::get_join_event))
         .route("/participant", get(participant::get_participant))
+        .route("/organizer", get(organizer::get_organizer))
         .route_layer(middleware::from_fn_with_state(
             Guard::new(&state.limits, RouteClass::Read),
             limits::enforce,
@@ -82,6 +84,10 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
         .route(
             "/participant/withdrawal",
             post(participant::post_withdrawal),
+        )
+        .route(
+            "/organizer/candidature-status",
+            post(organizer::post_candidature_status),
         )
         .route_layer(middleware::from_fn_with_state(
             Guard::new(&state.limits, RouteClass::Write),

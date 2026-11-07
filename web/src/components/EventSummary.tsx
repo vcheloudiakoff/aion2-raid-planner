@@ -22,6 +22,15 @@ export function roleLabel(reference: ReferenceSet | null, role: string, lang: st
   return r ? labelOf(r.label, lang) : role;
 }
 
+/** Titre d'écran d'un événement : l'instance et le jour de son premier créneau à venir, sinon du
+ * dernier. Libellé de la référence, repli sur l'id (AD-6). */
+export function eventTitle(event: PublicEvent, reference: ReferenceSet | null, lang: string, now: () => number): string {
+  const instance = reference?.instances.find((i) => i.id === event.instance);
+  const name = instance ? labelOf(instance.label, lang) : event.instance;
+  const first = event.slots.find((s) => Date.parse(s.startsAt) > now()) ?? event.slots[event.slots.length - 1];
+  return first ? `${name} · ${formatDay(first.startsAt, lang, new Date(now()))}` : name;
+}
+
 export interface SummaryProps {
   event: PublicEvent;
   reference: ReferenceSet | null;
@@ -32,11 +41,7 @@ export interface SummaryProps {
 
 export function Summary({ event, reference, now, heading: Heading = "h1" }: SummaryProps) {
   const lang = useLang();
-  const instance = reference?.instances.find((i) => i.id === event.instance);
   const region = reference?.regions.find((r) => r.id === event.region);
-  const name = instance ? labelOf(instance.label, lang) : event.instance;
-  // Titre : le premier créneau à venir, sinon le dernier.
-  const first = event.slots.find((s) => Date.parse(s.startsAt) > now()) ?? event.slots[event.slots.length - 1];
   const today = new Date(now());
   const registered = Object.values(event.countsByClass).reduce((a, b) => a + b, 0);
   const roles = [
@@ -49,7 +54,7 @@ export function Summary({ event, reference, now, heading: Heading = "h1" }: Summ
 
   return (
     <section data-testid="summary">
-      <Heading className="text-title">{first ? `${name} · ${formatDay(first.startsAt, lang, today)}` : name}</Heading>
+      <Heading className="text-title">{eventTitle(event, reference, lang, now)}</Heading>
       <p className="mt-1 flex flex-wrap items-center gap-x-2 text-meta text-ink-secondary">
         <span>{region ? labelOf(region.label, lang) : event.region}</span>
         <span aria-hidden="true">·</span>

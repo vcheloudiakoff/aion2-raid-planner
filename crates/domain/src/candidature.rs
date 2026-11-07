@@ -57,7 +57,8 @@ impl CandidatureStatus {
 }
 
 /// Lien par lequel la candidature est arrivée : `/j/` direct, `/e/` public.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Origin {
     Direct,
     Public,
@@ -70,6 +71,13 @@ impl Origin {
             Self::Direct => "direct",
             Self::Public => "public",
         }
+    }
+
+    /// Valeur lue dans la colonne `origin`.
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::Direct, Self::Public]
+            .into_iter()
+            .find(|v| v.as_str() == s)
     }
 
     /// Statut initial (AD-4) : accepté d'office par `/j/`, à valider par `/e/`.
@@ -347,6 +355,64 @@ pub fn participant_may(
             CandidatureStatus::Pending | CandidatureStatus::Accepted => Ok(()),
             _ => Err(ParticipantRefusal::TransitionForbidden),
         },
+    }
+}
+
+/// Statut que l'organisateur demande pour une candidature (AD-4) : il accepte ou il refuse, rien
+/// d'autre. `pending` et `withdrawn` ne se demandent pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Decision {
+    Accepted,
+    Rejected,
+}
+
+impl Decision {
+    /// Statut écrit par la décision.
+    pub const fn status(self) -> CandidatureStatus {
+        match self {
+            Self::Accepted => CandidatureStatus::Accepted,
+            Self::Rejected => CandidatureStatus::Rejected,
+        }
+    }
+}
+
+/// Refus d'une décision de l'organisateur, dans l'ordre où les règles sont vérifiées.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrganizerRefusal {
+    /// L'événement est annulé.
+    EventClosed,
+    /// La candidature est retirée : plus aucune transition n'en part.
+    TransitionForbidden,
+}
+
+/// Effet d'une décision permise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transition {
+    /// Le statut change : la commande l'écrit.
+    Change,
+    /// Le statut demandé est déjà le statut courant : rien à écrire.
+    Unchanged,
+}
+
+/// Règles d'état d'une décision de l'organisateur (AD-4), à vérifier après relecture de l'agrégat :
+/// événement annulé, puis candidature retirée, puis les transitions `pending → accepted|rejected` et
+/// `accepted ↔ rejected`, en `open` comme en `locked`. Redemander le statut courant est permis et
+/// n'écrit rien.
+pub fn organizer_may(
+    event: EventStatus,
+    current: CandidatureStatus,
+    decision: Decision,
+) -> Result<Transition, OrganizerRefusal> {
+    if event == EventStatus::Cancelled {
+        return Err(OrganizerRefusal::EventClosed);
+    }
+    match current {
+        CandidatureStatus::Withdrawn => Err(OrganizerRefusal::TransitionForbidden),
+        from if from == decision.status() => Ok(Transition::Unchanged),
+        CandidatureStatus::Pending | CandidatureStatus::Accepted | CandidatureStatus::Rejected => {
+            Ok(Transition::Change)
+        }
     }
 }
 
@@ -633,6 +699,10 @@ mod tests {
         assert_eq!(Origin::Public.initial_status(), CandidatureStatus::Pending);
         assert_eq!(Origin::Direct.as_str(), "direct");
         assert_eq!(Origin::Public.as_str(), "public");
+        for o in [Origin::Direct, Origin::Public] {
+            assert_eq!(Origin::parse(o.as_str()), Some(o));
+        }
+        assert_eq!(Origin::parse("other"), None);
     }
 
     fn current() -> CurrentCandidature {
@@ -810,5 +880,56 @@ mod tests {
                 Err(R::TransitionForbidden)
             );
         }
+    }
+
+    #[test]
+    fn organizer_rules_are_exhaustive_and_in_order() {
+        use CandidatureStatus::*;
+        use Decision as D;
+        use EventStatus::*;
+        use OrganizerRefusal as R;
+        use Transition::*;
+        // Chaque combinaison (événement, statut courant, décision), avec son résultat attendu.
+        let expected = |event: EventStatus, from: CandidatureStatus, to: D| match (event, from, to)
+        {
+            (Cancelled, _, _) => Err(R::EventClosed),
+            (_, Withdrawn, _) => Err(R::TransitionForbidden),
+            (_, Pending, _) => Ok(Change),
+            (_, Accepted, D::Rejected) | (_, Rejected, D::Accepted) => Ok(Change),
+            (_, Accepted, D::Accepted) | (_, Rejected, D::Rejected) => Ok(Unchanged),
+        };
+        let mut seen = 0;
+        for event in [Open, Locked, Cancelled] {
+            for from in [Pending, Accepted, Rejected, Withdrawn] {
+                for to in [D::Accepted, D::Rejected] {
+                    assert_eq!(
+                        organizer_may(event, from, to),
+                        expected(event, from, to),
+                        "{event:?} {from:?} -> {to:?}"
+                    );
+                    seen += 1;
+                }
+            }
+        }
+        assert_eq!(seen, 24);
+        // Lecture directe d'AD-4, en `open` comme en `locked`.
+        for event in [Open, Locked] {
+            assert_eq!(organizer_may(event, Pending, D::Accepted), Ok(Change));
+            assert_eq!(organizer_may(event, Pending, D::Rejected), Ok(Change));
+            assert_eq!(organizer_may(event, Accepted, D::Rejected), Ok(Change));
+            assert_eq!(organizer_may(event, Rejected, D::Accepted), Ok(Change));
+            assert_eq!(organizer_may(event, Accepted, D::Accepted), Ok(Unchanged));
+            assert_eq!(
+                organizer_may(event, Withdrawn, D::Accepted),
+                Err(R::TransitionForbidden)
+            );
+        }
+        // L'annulation passe avant le statut retiré.
+        assert_eq!(
+            organizer_may(Cancelled, Withdrawn, D::Accepted),
+            Err(R::EventClosed)
+        );
+        assert_eq!(D::Accepted.status(), Accepted);
+        assert_eq!(D::Rejected.status(), Rejected);
     }
 }

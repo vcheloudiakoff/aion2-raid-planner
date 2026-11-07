@@ -1,6 +1,8 @@
 //! SQL des candidatures (AD-4). Écritures seulement dans la transaction d'une commande (AD-16). Ni
 //! pseudo ni secret journalisé ici (AD-15) ; faction et rôle ne sont jamais stockés (AD-6).
 
+use std::collections::HashMap;
+
 use domain::Timestamp;
 use domain::candidature::{CandidatureStatus, NewAvailability, Origin, ValidCandidature};
 use sqlx::SqliteConnection;
@@ -44,8 +46,8 @@ pub async fn insert(
     Ok(())
 }
 
-/// Candidature lue en base, avec ses disponibilités triées par début de créneau. Lue seulement par
-/// le droit participant de cette candidature.
+/// Candidature lue en base, avec ses disponibilités triées par début de créneau. Lue par le droit
+/// participant de cette candidature, ou par le droit organisateur de son événement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CandidatureRow {
     pub id: String,
@@ -55,6 +57,7 @@ pub struct CandidatureRow {
     pub class: String,
     pub cp: u32,
     pub status: CandidatureStatus,
+    pub origin: Origin,
     pub availabilities: Vec<NewAvailability>,
 }
 
@@ -64,6 +67,35 @@ fn decode<T>(value: Option<T>, column: &'static str) -> Result<T, sqlx::Error> {
     })
 }
 
+/// Colonnes lues d'une candidature : `pseudo, server, class, cp, status, origin`.
+type Columns = (String, String, String, i64, String, String);
+
+fn row(
+    id: String,
+    event_id: &str,
+    (pseudo, server, class, cp, status, origin): Columns,
+    availabilities: Vec<NewAvailability>,
+) -> Result<CandidatureRow, sqlx::Error> {
+    Ok(CandidatureRow {
+        id,
+        event_id: event_id.to_owned(),
+        pseudo,
+        server,
+        class,
+        cp: decode(u32::try_from(cp).ok(), "cp")?,
+        status: decode(CandidatureStatus::parse(&status), "status")?,
+        origin: decode(Origin::parse(&origin), "origin")?,
+        availabilities,
+    })
+}
+
+fn availability((slot_id, preferred): (String, i64)) -> NewAvailability {
+    NewAvailability {
+        slot_id,
+        preferred: preferred != 0,
+    }
+}
+
 /// La candidature `id` dans l'événement `event_id` ; `None` si elle n'y est pas. Prend une connexion :
 /// celle du pool de lecture, ou la transaction d'une commande.
 pub async fn load(
@@ -71,14 +103,15 @@ pub async fn load(
     event_id: &str,
     id: &str,
 ) -> Result<Option<CandidatureRow>, sqlx::Error> {
-    let row: Option<(String, String, String, i64, String)> = sqlx::query_as(
-        "SELECT pseudo, server, class, cp, status FROM candidatures WHERE id = ? AND event_id = ?",
+    let columns: Option<Columns> = sqlx::query_as(
+        "SELECT pseudo, server, class, cp, status, origin FROM candidatures \
+         WHERE id = ? AND event_id = ?",
     )
     .bind(id)
     .bind(event_id)
     .fetch_optional(&mut *conn)
     .await?;
-    let Some((pseudo, server, class, cp, status)) = row else {
+    let Some(columns) = columns else {
         return Ok(None);
     };
     let availabilities: Vec<(String, i64)> = sqlx::query_as(
@@ -88,22 +121,74 @@ pub async fn load(
     .bind(id)
     .fetch_all(&mut *conn)
     .await?;
-    Ok(Some(CandidatureRow {
-        id: id.to_owned(),
-        event_id: event_id.to_owned(),
-        pseudo,
-        server,
-        class,
-        cp: decode(u32::try_from(cp).ok(), "cp")?,
-        status: decode(CandidatureStatus::parse(&status), "status")?,
-        availabilities: availabilities
-            .into_iter()
-            .map(|(slot_id, preferred)| NewAvailability {
-                slot_id,
-                preferred: preferred != 0,
-            })
-            .collect(),
-    }))
+    row(
+        id.to_owned(),
+        event_id,
+        columns,
+        availabilities.into_iter().map(availability).collect(),
+    )
+    .map(Some)
+}
+
+/// Statut de la candidature `id` si elle appartient à l'événement `event_id` ; `None` si elle est
+/// inconnue ou d'un autre événement. Lue dans la transaction d'une commande de l'organisateur, qui
+/// ne tient jamais pour acquis qu'un id venu du corps vise son événement.
+pub async fn load_in_event(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+    id: &str,
+) -> Result<Option<CandidatureStatus>, sqlx::Error> {
+    let status: Option<(String,)> =
+        sqlx::query_as("SELECT status FROM candidatures WHERE id = ? AND event_id = ?")
+            .bind(id)
+            .bind(event_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+    status
+        .map(|(s,)| decode(CandidatureStatus::parse(&s), "status"))
+        .transpose()
+}
+
+/// Toutes les candidatures de l'événement, tous statuts, dans l'ordre de création (`created_at`
+/// puis `id`), chacune avec ses disponibilités triées par début de créneau. Lue seulement par le
+/// droit organisateur. Deux requêtes, quel que soit le nombre de candidatures.
+pub async fn list(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+) -> Result<Vec<CandidatureRow>, sqlx::Error> {
+    let rows: Vec<(String, String, String, String, i64, String, String)> = sqlx::query_as(
+        "SELECT id, pseudo, server, class, cp, status, origin FROM candidatures \
+         WHERE event_id = ? ORDER BY created_at, id",
+    )
+    .bind(event_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    let checked: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT a.candidature_id, a.slot_id, a.preferred FROM availabilities a \
+         JOIN candidatures c ON c.id = a.candidature_id JOIN slots s ON s.id = a.slot_id \
+         WHERE c.event_id = ? ORDER BY s.starts_at, s.id",
+    )
+    .bind(event_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut by_candidature: HashMap<String, Vec<NewAvailability>> = HashMap::new();
+    for (candidature_id, slot_id, preferred) in checked {
+        by_candidature
+            .entry(candidature_id)
+            .or_default()
+            .push(availability((slot_id, preferred)));
+    }
+    rows.into_iter()
+        .map(|(id, pseudo, server, class, cp, status, origin)| {
+            let availabilities = by_candidature.remove(&id).unwrap_or_default();
+            row(
+                id,
+                event_id,
+                (pseudo, server, class, cp, status, origin),
+                availabilities,
+            )
+        })
+        .collect()
 }
 
 /// Remplace le contenu de la candidature : champs, puis disponibilités des créneaux `replaced`
