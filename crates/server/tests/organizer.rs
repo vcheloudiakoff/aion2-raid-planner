@@ -609,8 +609,16 @@ async fn no_secret_nor_pseudo_in_the_logs() {
             assert_eq!(res.status(), StatusCode::BAD_REQUEST);
         }
     };
-    // Même gabarit que `participant::no_secret_nor_pseudo_in_the_logs`.
-    requests("accepted").await;
+    // Premier passage sous un abonné muet : sans abonné, un callsite enregistré depuis un autre fil
+    // peut voir son intérêt figé à « jamais » (même gabarit que `candidature_submit`).
+    {
+        let mute = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(std::io::sink)
+            .finish();
+        let _mute = tracing::subscriber::set_default(mute);
+        requests("accepted").await;
+    }
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let captured = Captured::default();
     let writer = captured.clone();

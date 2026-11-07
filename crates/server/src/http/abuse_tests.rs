@@ -605,18 +605,25 @@ async fn limited_and_refused_requests_log_no_ip() {
     // Les tests tournent en parallèle et `tracing` met en cache l'intérêt de chaque callsite : un
     // premier enregistrement fait sur un autre fil, sans collecteur, peut le figer à « jamais ». Les
     // callsites sont donc touchés d'abord, puis le cache est reconstruit une fois le collecteur posé.
-    fx.read("192.0.2.250").await;
-    assert_code(&fx.read("192.0.2.250").await, Code::LimitRateLimited);
-    assert_code(
-        &fx.call(Method::GET, "/api/test/read", &[], None, None)
-            .await,
-        Code::LimitClientIpMissing,
-    );
-    assert_code(
-        &fx.post("/api/test/candidature", "192.0.2.250", json!({}))
-            .await,
-        Code::FormTokenInvalid,
-    );
+    {
+        let mute = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(std::io::sink)
+            .finish();
+        let _mute = tracing::subscriber::set_default(mute);
+        fx.read("192.0.2.250").await;
+        assert_code(&fx.read("192.0.2.250").await, Code::LimitRateLimited);
+        assert_code(
+            &fx.call(Method::GET, "/api/test/read", &[], None, None)
+                .await,
+            Code::LimitClientIpMissing,
+        );
+        assert_code(
+            &fx.post("/api/test/candidature", "192.0.2.250", json!({}))
+                .await,
+            Code::FormTokenInvalid,
+        );
+    }
     tokio::time::sleep(Duration::from_millis(50)).await;
     let captured = Captured::default();
     let writer = captured.clone();

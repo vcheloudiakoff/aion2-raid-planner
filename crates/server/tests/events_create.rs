@@ -622,7 +622,16 @@ async fn secrets_never_reach_the_logs() {
     // Les tests tournent en parallèle et `tracing` met en cache l'intérêt de chaque callsite : les
     // callsites sont touchés d'abord, puis le cache est reconstruit une fois le collecteur posé (même
     // gabarit que `http::abuse_tests`).
-    requests().await;
+    // Premier passage sous un abonné muet : sans abonné, un callsite enregistré depuis un autre fil
+    // peut voir son intérêt figé à « jamais » (même gabarit que `candidature_submit`).
+    {
+        let mute = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(std::io::sink)
+            .finish();
+        let _mute = tracing::subscriber::set_default(mute);
+        requests().await;
+    }
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let captured = Captured::default();
     let writer = captured.clone();
