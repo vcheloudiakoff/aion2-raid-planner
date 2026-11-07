@@ -110,3 +110,55 @@ export interface CreatedEvent {
   joinSecret: string;
   links: { organizer: string; join: string; public: string };
 }
+
+export type EventStatus = "open" | "locked" | "cancelled";
+
+/** Créneau d'un événement : `startsAt` en UTC, forme `YYYY-MM-DDTHH:MM:SSZ`. */
+export interface PublicSlot {
+  id: string;
+  startsAt: string;
+  durationMin: number;
+}
+
+/** `GET /api/events/{eventId}` et `GET /api/join` : l'événement vu par le public. Jamais de pseudo,
+ * de serveur de candidat, d'id de candidature ni de lien Discord ; comptes calculés par le serveur. */
+export interface PublicEvent {
+  id: string;
+  instance: string;
+  region: string;
+  factionScope: FactionScope;
+  visibility: Visibility;
+  status: EventStatus;
+  minCp?: number;
+  note: string;
+  /** Triés par `startsAt`. */
+  slots: PublicSlot[];
+  /** `classId → n`, une entrée par classe bornée de l'événement, zéros compris. */
+  countsByClass: Record<string, number>;
+  /** `roleId → n`. */
+  countsByRole: Record<string, number>;
+  /** Manques strictement positifs, triés par id de rôle. */
+  missingRoles: { role: string; missing: number }[];
+}
+
+export type CandidatureStatus = "pending" | "accepted" | "rejected" | "withdrawn";
+
+/** Corps de `POST /api/events/{eventId}/candidatures` et de `POST /api/join/candidatures`, à côté de
+ * `formToken` et du honeypot `website`. Une entrée d'`availabilities` par créneau coché. */
+export interface SubmitCandidature {
+  pseudo: string;
+  server: string;
+  class: string;
+  cp: number;
+  availabilities: { slotId: string; preferred: boolean }[];
+}
+
+/** Réponse 201 d'une candidature, rendue une seule fois. Chemin relatif, à préfixer par
+ * `location.origin`. */
+export interface CreatedCandidature {
+  eventId: string;
+  candidatureId: string;
+  participantSecret: string;
+  status: CandidatureStatus;
+  links: { participant: string };
+}

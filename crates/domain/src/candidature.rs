@@ -1,0 +1,502 @@
+//! Candidature (AD-4) : règles pures sur la saisie brute d'un joueur, contre un événement donné.
+//!
+//! [`validate_candidature`] prend le `ReferenceSet` une seule fois (AD-6), l'événement visé
+//! ([`EventContext`]) et `now` de l'horloge injectée (AD-11). Toutes les erreurs de champ sont rendues
+//! ensemble, dans l'ordre des champs du formulaire, avec des chemins JSON camelCase. Faction et rôle
+//! ne sont jamais stockés : ils se déduisent du serveur et de la classe.
+
+use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
+
+use crate::Timestamp;
+use crate::event::FactionScope;
+use crate::reference::ReferenceSet;
+use crate::validate;
+
+/// Candidatures permises par événement, tous statuts confondus (SPEC de l'epic 2, *Assumptions*).
+pub const CANDIDATURES_MAX: i64 = 200;
+
+/// Statut d'une candidature (AD-4). `withdrawn` est terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CandidatureStatus {
+    Pending,
+    Accepted,
+    Rejected,
+    Withdrawn,
+}
+
+impl CandidatureStatus {
+    /// Valeur de la colonne `status`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+            Self::Withdrawn => "withdrawn",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [
+            Self::Pending,
+            Self::Accepted,
+            Self::Rejected,
+            Self::Withdrawn,
+        ]
+        .into_iter()
+        .find(|v| v.as_str() == s)
+    }
+
+    /// Comptée sur la page publique : `rejected` et `withdrawn` n'y apparaissent pas, pour que la
+    /// page ne trahisse aucune décision de l'organisateur.
+    pub const fn is_counted(self) -> bool {
+        matches!(self, Self::Pending | Self::Accepted)
+    }
+}
+
+/// Lien par lequel la candidature est arrivée : `/j/` direct, `/e/` public.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Origin {
+    Direct,
+    Public,
+}
+
+impl Origin {
+    /// Valeur de la colonne `origin`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Public => "public",
+        }
+    }
+
+    /// Statut initial (AD-4) : accepté d'office par `/j/`, à valider par `/e/`.
+    pub const fn initial_status(self) -> CandidatureStatus {
+        match self {
+            Self::Direct => CandidatureStatus::Accepted,
+            Self::Public => CandidatureStatus::Pending,
+        }
+    }
+}
+
+/// Une disponibilité cochée : le créneau et sa préférence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewAvailability {
+    pub slot_id: String,
+    pub preferred: bool,
+}
+
+/// Saisie brute du joueur, avant toute règle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewCandidature {
+    pub pseudo: String,
+    pub server: String,
+    pub class: String,
+    pub cp: i64,
+    pub availabilities: Vec<NewAvailability>,
+}
+
+/// Créneau de l'événement visé.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotRef {
+    pub id: String,
+    pub starts_at: Timestamp,
+}
+
+/// Ce que la validation doit savoir de l'événement visé.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventContext {
+    pub region: String,
+    pub faction_scope: FactionScope,
+    pub slots: Vec<SlotRef>,
+    /// Classes qui ont une ligne `class_bounds` dans l'événement.
+    pub classes: Vec<String>,
+}
+
+/// Candidature prête à écrire.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidCandidature {
+    pub pseudo: String,
+    pub server: String,
+    pub class: String,
+    pub cp: u32,
+    pub availabilities: Vec<NewAvailability>,
+}
+
+/// Cas d'erreur d'un champ ; la couche `http` le traduit en code `<entité>.<cas>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CandidatureError {
+    PseudoInvalid,
+    ReferenceUnknown,
+    ServerOutOfRegion,
+    FactionOutOfScope,
+    CpOutOfRange,
+    NoAvailability,
+    SlotUnknown,
+    SlotInPast,
+}
+
+/// Chemin JSON camelCase du champ fautif (`availabilities.2.slotId`) et son cas.
+pub type CandidatureErrors = Vec<(String, CandidatureError)>;
+
+/// Applique toutes les règles de candidature ; rend toutes les erreurs, dans l'ordre des champs.
+/// `min_cp` n'est qu'un signal : il ne refuse rien et n'est donc pas lu ici.
+pub fn validate_candidature(
+    reference: &ReferenceSet,
+    event: &EventContext,
+    now: Timestamp,
+    input: NewCandidature,
+) -> Result<ValidCandidature, CandidatureErrors> {
+    let mut errors: CandidatureErrors = Vec::new();
+    let mut fail = |path: String, e: CandidatureError| errors.push((path, e));
+
+    if validate::pseudo(&input.pseudo).is_err() {
+        fail("pseudo".into(), CandidatureError::PseudoInvalid);
+    }
+
+    match reference
+        .servers
+        .iter()
+        .find(|s| s.enabled && s.id == input.server)
+    {
+        None => fail("server".into(), CandidatureError::ReferenceUnknown),
+        Some(s) if s.region != event.region => {
+            fail("server".into(), CandidatureError::ServerOutOfRegion)
+        }
+        Some(s) if !event.faction_scope.admits(s.faction) => {
+            fail("server".into(), CandidatureError::FactionOutOfScope)
+        }
+        Some(_) => {}
+    }
+
+    let class_known = reference
+        .classes
+        .iter()
+        .any(|c| c.enabled && c.id == input.class);
+    if !class_known || !event.classes.contains(&input.class) {
+        fail("class".into(), CandidatureError::ReferenceUnknown);
+    }
+
+    let cp = match validate::cp(input.cp) {
+        Ok(cp) => Some(cp),
+        Err(_) => {
+            fail("cp".into(), CandidatureError::CpOutOfRange);
+            None
+        }
+    };
+
+    if input.availabilities.is_empty() {
+        fail("availabilities".into(), CandidatureError::NoAvailability);
+    }
+    let mut seen = HashSet::new();
+    for (n, a) in input.availabilities.iter().enumerate() {
+        let path = format!("availabilities.{n}.slotId");
+        match event.slots.iter().find(|s| s.id == a.slot_id) {
+            None => fail(path, CandidatureError::SlotUnknown),
+            Some(_) if !seen.insert(a.slot_id.as_str()) => {
+                fail(path, CandidatureError::SlotUnknown)
+            }
+            Some(s) if s.starts_at <= now => fail(path, CandidatureError::SlotInPast),
+            Some(_) => {}
+        }
+    }
+
+    match cp {
+        Some(cp) if errors.is_empty() => Ok(ValidCandidature {
+            pseudo: input.pseudo,
+            server: input.server,
+            class: input.class,
+            cp,
+            availabilities: input.availabilities,
+        }),
+        _ => Err(errors),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reference::{Class, Faction, FactionEntry, Factions, Label, Region, Role, Server};
+
+    fn label(en: &str) -> Label {
+        Label {
+            en: en.into(),
+            fr: None,
+        }
+    }
+
+    fn server(id: &str, region: &str, faction: Faction, enabled: bool) -> Server {
+        Server {
+            id: id.into(),
+            region: region.into(),
+            faction,
+            tag: id.into(),
+            label: label(id),
+            enabled,
+        }
+    }
+
+    fn class(id: &str, enabled: bool) -> Class {
+        Class {
+            id: id.into(),
+            role: "ro".into(),
+            default_min: 0,
+            default_max: 10,
+            label: label(id),
+            enabled,
+        }
+    }
+
+    /// Jeu de test, valeurs fictives.
+    fn reference() -> ReferenceSet {
+        ReferenceSet {
+            regions: vec![
+                Region {
+                    id: "r1".into(),
+                    label: label("R1"),
+                    enabled: true,
+                },
+                Region {
+                    id: "r2".into(),
+                    label: label("R2"),
+                    enabled: true,
+                },
+            ],
+            factions: Factions {
+                elyos: FactionEntry { label: label("E") },
+                asmodian: FactionEntry { label: label("A") },
+            },
+            servers: vec![
+                server("se", "r1", Faction::Elyos, true),
+                server("sa", "r1", Faction::Asmodian, true),
+                server("s_far", "r2", Faction::Elyos, true),
+                server("s_off", "r1", Faction::Elyos, false),
+            ],
+            room_label_charset: "R".into(),
+            room_label_max: 4,
+            instances: vec![],
+            classes: vec![
+                class("c1", true),
+                class("c2", true),
+                class("c_off", false),
+                class("c_new", true),
+            ],
+            roles: vec![Role {
+                id: "ro".into(),
+                label: label("Ro"),
+                enabled: true,
+            }],
+        }
+    }
+
+    fn now() -> Timestamp {
+        "2026-11-06T10:00:00Z".parse().unwrap()
+    }
+
+    fn at(hours: i64) -> Timestamp {
+        Timestamp::from_unix_seconds(now().unix_seconds() + hours * 3600).unwrap()
+    }
+
+    fn event() -> EventContext {
+        EventContext {
+            region: "r1".into(),
+            faction_scope: FactionScope::All,
+            slots: vec![
+                SlotRef {
+                    id: "s1".into(),
+                    starts_at: at(24),
+                },
+                SlotRef {
+                    id: "s2".into(),
+                    starts_at: at(48),
+                },
+                SlotRef {
+                    id: "past".into(),
+                    starts_at: at(-1),
+                },
+            ],
+            // `c_new` est active dans la référence mais n'a pas de borne dans cet événement.
+            classes: vec!["c1".into(), "c2".into(), "c_off".into()],
+        }
+    }
+
+    fn avail(slot: &str, preferred: bool) -> NewAvailability {
+        NewAvailability {
+            slot_id: slot.into(),
+            preferred,
+        }
+    }
+
+    fn input() -> NewCandidature {
+        NewCandidature {
+            pseudo: "Nyra".into(),
+            server: "sa".into(),
+            class: "c1".into(),
+            cp: 1500,
+            availabilities: vec![avail("s1", true), avail("s2", true)],
+        }
+    }
+
+    fn errors_with(ev: &EventContext, i: NewCandidature) -> CandidatureErrors {
+        validate_candidature(&reference(), ev, now(), i).unwrap_err()
+    }
+
+    fn errors(i: NewCandidature) -> CandidatureErrors {
+        errors_with(&event(), i)
+    }
+
+    fn one(path: &str, e: CandidatureError) -> CandidatureErrors {
+        vec![(path.into(), e)]
+    }
+
+    #[test]
+    fn nominal_keeps_every_preference() {
+        let v = validate_candidature(&reference(), &event(), now(), input()).unwrap();
+        assert_eq!(v.pseudo, "Nyra");
+        assert_eq!(v.cp, 1500);
+        assert_eq!(v.availabilities, vec![avail("s1", true), avail("s2", true)]);
+    }
+
+    #[test]
+    fn pseudo_rule() {
+        for bad in ["", "a b", &"a".repeat(17)] {
+            let mut i = input();
+            i.pseudo = bad.into();
+            assert_eq!(
+                errors(i),
+                one("pseudo", CandidatureError::PseudoInvalid),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn server_must_exist_be_in_region_and_in_scope() {
+        for (id, e) in [
+            ("nope", CandidatureError::ReferenceUnknown),
+            ("s_off", CandidatureError::ReferenceUnknown),
+            ("s_far", CandidatureError::ServerOutOfRegion),
+        ] {
+            let mut i = input();
+            i.server = id.into();
+            assert_eq!(errors(i), one("server", e), "{id}");
+        }
+        let mut ev = event();
+        ev.faction_scope = FactionScope::Elyos;
+        assert_eq!(
+            errors_with(&ev, input()),
+            one("server", CandidatureError::FactionOutOfScope)
+        );
+        let mut i = input();
+        i.server = "se".into();
+        assert!(validate_candidature(&reference(), &ev, now(), i).is_ok());
+    }
+
+    #[test]
+    fn class_must_be_enabled_and_bounded_in_the_event() {
+        for id in ["nope", "c_off", "c_new"] {
+            let mut i = input();
+            i.class = id.into();
+            assert_eq!(
+                errors(i),
+                one("class", CandidatureError::ReferenceUnknown),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn cp_bounds() {
+        for cp in [-1, 1_000_000] {
+            let mut i = input();
+            i.cp = cp;
+            assert_eq!(errors(i), one("cp", CandidatureError::CpOutOfRange), "{cp}");
+        }
+        for cp in [0, 999_999] {
+            let mut i = input();
+            i.cp = cp;
+            assert!(validate_candidature(&reference(), &event(), now(), i).is_ok());
+        }
+    }
+
+    #[test]
+    fn availabilities_rules() {
+        let mut i = input();
+        i.availabilities.clear();
+        assert_eq!(
+            errors(i),
+            one("availabilities", CandidatureError::NoAvailability)
+        );
+        let mut i = input();
+        i.availabilities.push(avail("elsewhere", false));
+        assert_eq!(
+            errors(i),
+            one("availabilities.2.slotId", CandidatureError::SlotUnknown)
+        );
+        let mut i = input();
+        i.availabilities.push(avail("past", false));
+        assert_eq!(
+            errors(i),
+            one("availabilities.2.slotId", CandidatureError::SlotInPast)
+        );
+        let mut i = input();
+        i.availabilities.push(avail("s1", false));
+        assert_eq!(
+            errors(i),
+            one("availabilities.2.slotId", CandidatureError::SlotUnknown)
+        );
+        // Un créneau qui commence maintenant est passé.
+        let mut ev = event();
+        ev.slots[0].starts_at = now();
+        assert_eq!(
+            errors_with(&ev, input()),
+            one("availabilities.0.slotId", CandidatureError::SlotInPast)
+        );
+    }
+
+    #[test]
+    fn all_errors_are_collected_in_field_order() {
+        let i = NewCandidature {
+            pseudo: "a".repeat(17),
+            server: "s_far".into(),
+            class: "nope".into(),
+            cp: 1_000_000,
+            availabilities: vec![avail("s1", false), avail("x", true)],
+        };
+        assert_eq!(
+            errors(i),
+            vec![
+                ("pseudo".into(), CandidatureError::PseudoInvalid),
+                ("server".into(), CandidatureError::ServerOutOfRegion),
+                ("class".into(), CandidatureError::ReferenceUnknown),
+                ("cp".into(), CandidatureError::CpOutOfRange),
+                (
+                    "availabilities.1.slotId".into(),
+                    CandidatureError::SlotUnknown
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn statuses_and_origins() {
+        for s in [
+            CandidatureStatus::Pending,
+            CandidatureStatus::Accepted,
+            CandidatureStatus::Rejected,
+            CandidatureStatus::Withdrawn,
+        ] {
+            assert_eq!(CandidatureStatus::parse(s.as_str()), Some(s));
+        }
+        assert!(CandidatureStatus::Pending.is_counted());
+        assert!(CandidatureStatus::Accepted.is_counted());
+        assert!(!CandidatureStatus::Rejected.is_counted());
+        assert!(!CandidatureStatus::Withdrawn.is_counted());
+        assert_eq!(Origin::Direct.initial_status(), CandidatureStatus::Accepted);
+        assert_eq!(Origin::Public.initial_status(), CandidatureStatus::Pending);
+        assert_eq!(Origin::Direct.as_str(), "direct");
+        assert_eq!(Origin::Public.as_str(), "public");
+    }
+}

@@ -30,7 +30,8 @@ pub fn is_api(path: &str) -> bool {
     path == "/api" || path.starts_with("/api/")
 }
 
-/// Préfixes des chemins de la SPA qui portent un secret de lien (AD-3) : `/o`, `/j`, `/p`.
+/// Préfixes des chemins de la SPA qui portent un secret de lien (AD-3) : `/o`, `/j`, `/p`. `/e/<id>`
+/// n'en porte pas : son `noindex` dépend de l'événement et vient de la route `events::event_page`.
 pub const SECRET_PATH_PREFIXES: &[&str] = &["/o", "/j", "/p"];
 
 /// Chemin de la SPA qui porte un secret : `/o`, `/j`, `/p` ou un de leurs sous-chemins, pas `/old`.

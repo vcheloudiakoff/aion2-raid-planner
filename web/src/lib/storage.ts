@@ -58,3 +58,28 @@ export function writeJson(key: string, value: unknown): boolean {
   }
   return writeItem(key, raw);
 }
+
+/** Dernier pseudo, serveur et classe utilisés sur cet appareil (EXPERIENCE.md *Formulaires*). Le CP
+ * n'est jamais retenu. Écrit après une candidature réussie seulement. */
+export const CANDIDATE_PREFS_KEY = "prefs.candidate";
+
+export interface CandidatePrefs {
+  pseudo?: string;
+  server?: string;
+  class?: string;
+}
+
+export function readCandidatePrefs(): CandidatePrefs {
+  const raw = readJson(CANDIDATE_PREFS_KEY);
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  const out: CandidatePrefs = {};
+  for (const k of ["pseudo", "server", "class"] as const) {
+    const v = (raw as Record<string, unknown>)[k];
+    if (typeof v === "string" && v.length <= 64) out[k] = v;
+  }
+  return out;
+}
+
+export function writeCandidatePrefs(prefs: Required<CandidatePrefs>): boolean {
+  return writeJson(CANDIDATE_PREFS_KEY, { pseudo: prefs.pseudo, server: prefs.server, class: prefs.class });
+}

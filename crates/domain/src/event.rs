@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::Timestamp;
-use crate::reference::ReferenceSet;
+use crate::reference::{Faction, ReferenceSet};
 use crate::validate;
 
 /// Nombre de créneaux permis par événement (SPEC de l'epic 2, *Assumptions*).
@@ -37,6 +37,22 @@ impl FactionScope {
             Self::Asmodian => "asmodian",
         }
     }
+
+    /// Valeur lue dans la colonne `faction_scope`.
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::All, Self::Elyos, Self::Asmodian]
+            .into_iter()
+            .find(|v| v.as_str() == s)
+    }
+
+    /// Vrai si un serveur de cette faction entre dans la portée.
+    pub fn admits(self, faction: Faction) -> bool {
+        match self {
+            Self::All => true,
+            Self::Elyos => faction == Faction::Elyos,
+            Self::Asmodian => faction == Faction::Asmodian,
+        }
+    }
 }
 
 /// Présence dans la liste publique, choisie par l'organisateur.
@@ -55,6 +71,39 @@ impl Visibility {
             Self::Listed => "listed",
             Self::Unlisted => "unlisted",
         }
+    }
+
+    /// Valeur lue dans la colonne `visibility`.
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::Listed, Self::Unlisted]
+            .into_iter()
+            .find(|v| v.as_str() == s)
+    }
+}
+
+/// État de l'événement (AD-4) : `open → locked → open`, `open|locked → cancelled`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EventStatus {
+    Open,
+    Locked,
+    Cancelled,
+}
+
+impl EventStatus {
+    /// Valeur de la colonne `status`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Locked => "locked",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::Open, Self::Locked, Self::Cancelled]
+            .into_iter()
+            .find(|v| v.as_str() == s)
     }
 }
 
@@ -593,6 +642,38 @@ mod tests {
                 None => assert!(r.is_ok(), "{min} {max}"),
             }
         }
+    }
+
+    #[test]
+    fn column_values_round_trip() {
+        for v in [
+            FactionScope::All,
+            FactionScope::Elyos,
+            FactionScope::Asmodian,
+        ] {
+            assert_eq!(FactionScope::parse(v.as_str()), Some(v));
+        }
+        for v in [Visibility::Listed, Visibility::Unlisted] {
+            assert_eq!(Visibility::parse(v.as_str()), Some(v));
+        }
+        for v in [
+            EventStatus::Open,
+            EventStatus::Locked,
+            EventStatus::Cancelled,
+        ] {
+            assert_eq!(EventStatus::parse(v.as_str()), Some(v));
+        }
+        assert_eq!(FactionScope::parse("ALL"), None);
+        assert_eq!(EventStatus::parse(""), None);
+    }
+
+    #[test]
+    fn scope_admits_factions() {
+        assert!(FactionScope::All.admits(Faction::Elyos));
+        assert!(FactionScope::All.admits(Faction::Asmodian));
+        assert!(FactionScope::Elyos.admits(Faction::Elyos));
+        assert!(!FactionScope::Elyos.admits(Faction::Asmodian));
+        assert!(!FactionScope::Asmodian.admits(Faction::Elyos));
     }
 
     #[test]

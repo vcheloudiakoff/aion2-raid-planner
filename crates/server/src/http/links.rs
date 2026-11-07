@@ -15,6 +15,11 @@
 //! - `Participant` sur une route avec `{candidature_id}` : l'événement et la candidature sont vérifiés.
 //! - `Participant` sur une route sans `{candidature_id}` : seul l'événement est vérifié ; le handler
 //!   prend la candidature dans `link.candidature_id()`, jamais un id venu du corps de la requête.
+//!
+//! Seule exception à la portée par chemin : [`JoinLink`], pour les routes `/api/join*`. La page
+//! `/j/<secret>` ne connaît pas son événement et le secret n'entre jamais dans une URL d'API : la
+//! portée vient donc de la ligne du lien elle-même. Seul le droit `join` se résout ainsi ; les mêmes
+//! en-tête, ordre de réponses et silence de journal s'appliquent.
 
 use std::marker::PhantomData;
 
@@ -26,7 +31,7 @@ use axum::http::request::Parts;
 use crate::app::AppState;
 use crate::http::errors::Code;
 use crate::infra::ids::SECRET_LEN;
-use crate::infra::links::{self, Right};
+use crate::infra::links::{self, LinkRow, Right};
 
 pub const X_LINK_SECRET: HeaderName = HeaderName::from_static("x-link-secret");
 
@@ -137,34 +142,66 @@ async fn scope<R: RequiredRight>(
     }
 }
 
+/// Lit `X-Link-Secret` et résout le lien, quel que soit son droit. `right` ne sert qu'au journal.
+async fn lookup(parts: &Parts, state: &AppState, right: Right) -> Result<LinkRow, Code> {
+    let mut values = parts.headers.get_all(X_LINK_SECRET).iter();
+    let value = match (values.next(), values.next()) {
+        (None, _) => return Err(Code::AuthMissing),
+        (Some(_), Some(_)) => return Err(Code::AuthNotFound),
+        (Some(value), None) => value.as_bytes(),
+    };
+    // Mal formé : indiscernable d'un inconnu pour le porteur, et aucune requête inutile.
+    if !well_formed(value) {
+        return Err(Code::AuthNotFound);
+    }
+    // `well_formed` garantit de l'ASCII.
+    let secret = std::str::from_utf8(value).map_err(|_| Code::AuthNotFound)?;
+
+    match links::find(&state.db.read, &links::hash(secret)).await {
+        Ok(Some(row)) => Ok(row),
+        Ok(None) => Err(Code::AuthNotFound),
+        Err(e) => {
+            // L'erreur sqlx ne porte pas les valeurs liées : ni secret ni hash dans le journal.
+            tracing::error!(error = %e, right = right.as_str(), "link lookup failed");
+            Err(Code::ServerInternal)
+        }
+    }
+}
+
+/// Lien `/j/` résolu sans `event_id` de chemin, pour les routes `/api/join*` : l'événement vient de
+/// la ligne du lien. Un secret d'un autre droit = 403 `auth.wrong_right`. Ne contient pas le secret.
+#[derive(Debug)]
+pub struct JoinLink {
+    event_id: String,
+}
+
+impl JoinLink {
+    /// Événement du lien direct.
+    pub fn event_id(&self) -> &str {
+        &self.event_id
+    }
+}
+
+impl FromRequestParts<AppState> for JoinLink {
+    type Rejection = Code;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Code> {
+        let row = lookup(parts, state, Right::Join).await?;
+        if row.right != Right::Join {
+            return Err(Code::AuthWrongRight);
+        }
+        Ok(Self {
+            event_id: row.event_id,
+        })
+    }
+}
+
 impl<R: RequiredRight> FromRequestParts<AppState> for LinkSecret<R> {
     type Rejection = Code;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Code> {
         let scope = scope::<R>(parts, state).await?;
-
-        let mut values = parts.headers.get_all(X_LINK_SECRET).iter();
-        let value = match (values.next(), values.next()) {
-            (None, _) => return Err(Code::AuthMissing),
-            (Some(_), Some(_)) => return Err(Code::AuthNotFound),
-            (Some(value), None) => value.as_bytes(),
-        };
-        // Mal formé : indiscernable d'un inconnu pour le porteur, et aucune requête inutile.
-        if !well_formed(value) {
-            return Err(Code::AuthNotFound);
-        }
-        // `well_formed` garantit de l'ASCII.
-        let secret = std::str::from_utf8(value).map_err(|_| Code::AuthNotFound)?;
-
-        let row = match links::find(&state.db.read, &links::hash(secret)).await {
-            Ok(Some(row)) => row,
-            Ok(None) => return Err(Code::AuthNotFound),
-            Err(e) => {
-                // L'erreur sqlx ne porte pas les valeurs liées : ni secret ni hash dans le journal.
-                tracing::error!(error = %e, right = R::RIGHT.as_str(), "link lookup failed");
-                return Err(Code::ServerInternal);
-            }
-        };
+        let row = lookup(parts, state, R::RIGHT).await?;
 
         let Some(scope) = scope else {
             return Err(Code::AuthWrongRight);
@@ -201,7 +238,6 @@ mod tests {
     use super::*;
     use crate::infra::clock::FixedClock;
     use crate::infra::ids::{DeterministicIdGenerator, IdGenerator, Secret};
-    use crate::infra::links::LinkRow;
     use crate::infra::reference::ReferenceStore;
     use crate::infra::sqlite::{Db, shared_memory_options};
 
@@ -225,6 +261,10 @@ mod tests {
         "unreachable"
     }
 
+    async fn join_link(link: JoinLink) -> String {
+        link.event_id().to_owned()
+    }
+
     fn router(state: AppState) -> Router {
         Router::new()
             .route("/api/test/events/{event_id}/organizer", get(organizer))
@@ -235,6 +275,7 @@ mod tests {
                 get(participant),
             )
             .route("/api/test/no-scope", get(no_scope))
+            .route("/api/test/join", get(join_link))
             .with_state(state)
     }
 
@@ -410,6 +451,41 @@ mod tests {
         ] {
             expect_code(&fx.router, &uri, &headers, Code::AuthNotFound).await;
         }
+    }
+
+    #[tokio::test]
+    async fn join_link_takes_its_scope_from_the_link_row() {
+        let fx = fixture("join_link").await;
+        let (status, body) = call(&fx.router, "/api/test/join", &with(&fx.join)).await;
+        assert_eq!((status, body), (StatusCode::OK, fx.e.clone()));
+        for secret in [&fx.organizer, &fx.participant] {
+            expect_code(
+                &fx.router,
+                "/api/test/join",
+                &with(secret),
+                Code::AuthWrongRight,
+            )
+            .await;
+        }
+        expect_code(&fx.router, "/api/test/join", &[], Code::AuthMissing).await;
+        let unknown = "A".repeat(SECRET_LEN);
+        for value in ["short", unknown.as_str()] {
+            expect_code(
+                &fx.router,
+                "/api/test/join",
+                &[("x-link-secret", value)],
+                Code::AuthNotFound,
+            )
+            .await;
+        }
+        let good = fx.join.expose();
+        expect_code(
+            &fx.router,
+            "/api/test/join",
+            &[("x-link-secret", good), ("x-link-secret", good)],
+            Code::AuthNotFound,
+        )
+        .await;
     }
 
     #[test]

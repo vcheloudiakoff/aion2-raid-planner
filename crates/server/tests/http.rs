@@ -127,7 +127,8 @@ async fn secret_spa_paths_are_noindex() {
         assert_eq!(header(&res, "x-robots-tag"), "noindex", "{uri}");
         assert_security_headers(&res);
     }
-    for uri in ["/", "/old", "/e/abc", "/api/health"] {
+    // `/e/<id>` dépend de l'événement : un id inconnu est noindex (tests/public_event.rs).
+    for uri in ["/", "/old", "/api/health"] {
         let (res, _) = send(&router, Method::GET, uri).await;
         assert!(res.headers().get("x-robots-tag").is_none(), "{uri}");
     }

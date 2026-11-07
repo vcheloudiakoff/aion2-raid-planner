@@ -2,3 +2,4 @@
 //! `domain` avec le `ReferenceSet` pris une fois, écrit et commit (AD-16).
 
 pub mod create_event;
+pub mod submit_candidature;

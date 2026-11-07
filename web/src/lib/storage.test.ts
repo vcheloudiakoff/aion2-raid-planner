@@ -1,11 +1,32 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readItem, readJson, removeItem, writeItem, writeJson } from "./storage";
+import {
+  CANDIDATE_PREFS_KEY,
+  readCandidatePrefs,
+  readItem,
+  readJson,
+  removeItem,
+  writeCandidatePrefs,
+  writeItem,
+  writeJson,
+} from "./storage";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   localStorage.clear();
+});
+
+describe("candidate prefs", () => {
+  it("round-trip pseudo, server and class, and ignore anything else", () => {
+    expect(readCandidatePrefs()).toEqual({});
+    expect(writeCandidatePrefs({ pseudo: "Nyra", server: "s1", class: "c1" })).toBe(true);
+    expect(readCandidatePrefs()).toEqual({ pseudo: "Nyra", server: "s1", class: "c1" });
+    localStorage.setItem(CANDIDATE_PREFS_KEY, JSON.stringify({ pseudo: 3, server: "s1", cp: 1500 }));
+    expect(readCandidatePrefs()).toEqual({ server: "s1" });
+    localStorage.setItem(CANDIDATE_PREFS_KEY, "[");
+    expect(readCandidatePrefs()).toEqual({});
+  });
 });
 
 describe("storage", () => {

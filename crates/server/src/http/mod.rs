@@ -1,6 +1,7 @@
 //! Routes Axum, assets embarqués et en-têtes. Même origine pour l'API et la SPA : pas de CORS.
 
 pub mod assets;
+pub mod candidatures;
 pub mod client_ip;
 pub mod dto;
 pub mod errors;
@@ -41,6 +42,8 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
     let read = Router::new()
         .route("/reference", get(reference::get_reference))
         .route("/form-token", get(form_token::get_form_token))
+        .route("/events/{event_id}", get(candidatures::get_public_event))
+        .route("/join", get(candidatures::get_join_event))
         .route_layer(middleware::from_fn_with_state(
             Guard::new(&state.limits, RouteClass::Read),
             limits::enforce,
@@ -52,16 +55,35 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
             Guard::new(&state.limits, RouteClass::Create),
             limits::enforce,
         ));
+    // Classe `candidature` : jeton de formulaire et honeypot vérifiés par la commande, quota
+    // `RATE_CANDIDATURE`.
+    let candidature = Router::new()
+        .route(
+            "/events/{event_id}/candidatures",
+            post(candidatures::post_public_candidature),
+        )
+        .route(
+            "/join/candidatures",
+            post(candidatures::post_join_candidature),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            Guard::new(&state.limits, RouteClass::Candidature),
+            limits::enforce,
+        ));
     // Classe `nokey` : ni IP ni limiteur.
     let api = Router::new()
         .route("/health", get(get_health))
         .merge(read)
         .merge(create)
+        .merge(candidature)
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_method_not_allowed);
+    // `/e/{event_id}` sert `index.html` comme le repli, avec un `noindex` conditionnel (AD-3) ;
+    // classe `nokey` comme tout `index.html`.
     Router::new()
         .nest("/api", api)
-        .fallback(assets::serve::<A>)
+        .route("/e/{event_id}", get(events::event_page::<A>))
+        .fallback(events::spa_fallback::<A>)
         .layer(middleware::from_fn(headers::security_headers))
         .with_state(state)
 }

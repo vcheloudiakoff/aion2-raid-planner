@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 use axum::http::StatusCode;
 use axum::http::header::{CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 use axum::response::{IntoResponse, Response};
-use domain::event::{EventError, FieldErrors};
+use domain::candidature::CandidatureError;
+use domain::event::EventError;
 use serde::Serialize;
 
 pub const PROBLEM_JSON: &str = "application/problem+json";
@@ -53,10 +54,20 @@ codes! {
     AuthMissing => "auth.missing", UNAUTHORIZED;
     AuthNotFound => "auth.not_found", NOT_FOUND;
     AuthWrongRight => "auth.wrong_right", FORBIDDEN;
+    CandidatureCpOutOfRange => "candidature.cp_out_of_range", BAD_REQUEST;
+    CandidatureFactionOutOfScope => "candidature.faction_out_of_scope", BAD_REQUEST;
+    CandidatureLimitReached => "candidature.limit_reached", CONFLICT;
+    CandidatureNoAvailability => "candidature.no_availability", BAD_REQUEST;
+    CandidaturePreferenceNotAvailable => "candidature.preference_not_available", BAD_REQUEST;
+    CandidaturePseudoInvalid => "candidature.pseudo_invalid", BAD_REQUEST;
+    CandidatureServerOutOfRegion => "candidature.server_out_of_region", BAD_REQUEST;
+    CandidatureSlotUnknown => "candidature.slot_unknown", BAD_REQUEST;
     EventClassBoundsInvalid => "event.class_bounds_invalid", BAD_REQUEST;
+    EventClosed => "event.closed", CONFLICT;
     EventDiscordUrlInvalid => "event.discord_url_invalid", BAD_REQUEST;
     EventFactionScopeNotAllowed => "event.faction_scope_not_allowed", BAD_REQUEST;
     EventMinCpOutOfRange => "event.min_cp_out_of_range", BAD_REQUEST;
+    EventNotFound => "event.not_found", NOT_FOUND;
     EventNoteInvalid => "event.note_invalid", BAD_REQUEST;
     FormMalformed => "form.malformed", BAD_REQUEST;
     FormRejected => "form.rejected", BAD_REQUEST;
@@ -124,6 +135,21 @@ impl From<EventError> for Code {
     }
 }
 
+impl From<CandidatureError> for Code {
+    fn from(e: CandidatureError) -> Self {
+        match e {
+            CandidatureError::PseudoInvalid => Code::CandidaturePseudoInvalid,
+            CandidatureError::ReferenceUnknown => Code::ReferenceUnknown,
+            CandidatureError::ServerOutOfRegion => Code::CandidatureServerOutOfRegion,
+            CandidatureError::FactionOutOfScope => Code::CandidatureFactionOutOfScope,
+            CandidatureError::CpOutOfRange => Code::CandidatureCpOutOfRange,
+            CandidatureError::NoAvailability => Code::CandidatureNoAvailability,
+            CandidatureError::SlotUnknown => Code::CandidatureSlotUnknown,
+            CandidatureError::SlotInPast => Code::SlotInPast,
+        }
+    }
+}
+
 /// Réponse d'erreur `/api/*`. Le statut, le code et, pour une erreur de validation, les codes par
 /// champ : la cause d'une erreur interne part dans `tracing`, jamais dans le corps.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,16 +187,19 @@ impl Problem {
 
     /// Erreurs de champ : `code` est celui de la première, `fields` les porte toutes. Liste vide =
     /// erreur interne (aucun appelant ne devrait la produire).
-    pub fn fields(errors: FieldErrors) -> Self {
-        let Some((_, first)) = errors.first() else {
-            return Self::new(Code::ServerInternal);
-        };
-        let mut problem = Self::new(Code::from(*first));
+    pub fn fields<E: Into<Code>>(errors: Vec<(String, E)>) -> Self {
+        let mut first = None;
         let mut fields = BTreeMap::new();
         for (path, e) in errors {
+            let code = e.into();
+            first.get_or_insert(code);
             // Un chemin vu deux fois garde sa première erreur.
-            fields.entry(path).or_insert(Code::from(e).as_str());
+            fields.entry(path).or_insert(code.as_str());
         }
+        let Some(first) = first else {
+            return Self::new(Code::ServerInternal);
+        };
+        let mut problem = Self::new(first);
         problem.fields = Some(fields);
         problem
     }
@@ -347,6 +376,54 @@ mod tests {
         ] {
             assert_eq!(Code::from(e).status(), StatusCode::BAD_REQUEST, "{e:?}");
         }
+    }
+
+    #[test]
+    fn every_candidature_error_maps_to_a_bad_request() {
+        for e in [
+            CandidatureError::PseudoInvalid,
+            CandidatureError::ReferenceUnknown,
+            CandidatureError::ServerOutOfRegion,
+            CandidatureError::FactionOutOfScope,
+            CandidatureError::CpOutOfRange,
+            CandidatureError::NoAvailability,
+            CandidatureError::SlotUnknown,
+            CandidatureError::SlotInPast,
+        ] {
+            assert_eq!(Code::from(e).status(), StatusCode::BAD_REQUEST, "{e:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn candidature_field_errors_use_the_same_shape() {
+        let (res, json) = render(Problem::fields(vec![
+            ("pseudo".into(), CandidatureError::PseudoInvalid),
+            ("cp".into(), CandidatureError::CpOutOfRange),
+        ]))
+        .await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(json["code"], "candidature.pseudo_invalid");
+        assert_eq!(
+            json["fields"],
+            serde_json::json!({
+                "pseudo": "candidature.pseudo_invalid",
+                "cp": "candidature.cp_out_of_range",
+            })
+        );
+        let (res, _) = render(Problem::fields(Vec::<(String, CandidatureError)>::new())).await;
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn state_conflicts_are_409_and_absent_event_is_404() {
+        for code in [Code::EventClosed, Code::CandidatureLimitReached] {
+            assert_eq!(code.status(), StatusCode::CONFLICT, "{code}");
+        }
+        assert_eq!(Code::EventNotFound.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            Code::CandidaturePreferenceNotAvailable.status(),
+            StatusCode::BAD_REQUEST
+        );
     }
 
     #[tokio::test]

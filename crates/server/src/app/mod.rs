@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod health;
+pub mod queries;
 pub mod tasks;
 
 use std::sync::Arc;

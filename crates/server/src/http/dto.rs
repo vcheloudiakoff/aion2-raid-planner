@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use domain::Timestamp;
-use domain::event::{self as ev, FactionScope, Visibility};
+use domain::candidature::{self as cand, CandidatureStatus};
+use domain::event::{self as ev, EventStatus, FactionScope, Visibility};
 use domain::reference as r;
 use serde::{Deserialize, Serialize};
 
@@ -298,4 +299,102 @@ pub struct CreatedLinks {
     pub join: String,
     /// `/e/<eventId>`
     pub public: String,
+}
+
+/// Réponse de `GET /api/events/{eventId}` et de `GET /api/join` : l'événement vu par le public.
+/// Jamais de pseudo, de serveur de candidat, d'id de candidature, de `discordUrl`, d'
+/// `adminUnlistedAt` ni de `createdAt` (AD-4 *Données exposées*) ; les comptes sont calculés ici.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicEvent {
+    pub id: String,
+    pub instance: String,
+    pub region: String,
+    pub faction_scope: FactionScope,
+    pub visibility: Visibility,
+    pub status: EventStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_cp: Option<u32>,
+    pub note: String,
+    /// Triés par `startsAt`.
+    pub slots: Vec<PublicSlot>,
+    /// `classId → n`, une entrée par classe bornée de l'événement, zéros compris.
+    pub counts_by_class: BTreeMap<String, u32>,
+    /// `roleId → n`.
+    pub counts_by_role: BTreeMap<String, u32>,
+    /// Manques strictement positifs, triés par id de rôle.
+    pub missing_roles: Vec<MissingRole>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicSlot {
+    pub id: String,
+    pub starts_at: Timestamp,
+    pub duration_min: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MissingRole {
+    pub role: String,
+    pub missing: u32,
+}
+
+/// Corps de `POST /api/events/{eventId}/candidatures` et de `POST /api/join/candidatures`, à plat
+/// dans `FormEnvelope`. `cp` en `i64` : une valeur hors bornes est une erreur de champ.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitCandidature {
+    pub pseudo: String,
+    pub server: String,
+    pub class: String,
+    pub cp: i64,
+    /// Une entrée par créneau coché ; `preferred` ne peut donc viser qu'un créneau coché.
+    pub availabilities: Vec<AvailabilityInput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailabilityInput {
+    pub slot_id: String,
+    #[serde(default)]
+    pub preferred: bool,
+}
+
+impl From<SubmitCandidature> for cand::NewCandidature {
+    fn from(c: SubmitCandidature) -> Self {
+        Self {
+            pseudo: c.pseudo,
+            server: c.server,
+            class: c.class,
+            cp: c.cp,
+            availabilities: c
+                .availabilities
+                .into_iter()
+                .map(|a| cand::NewAvailability {
+                    slot_id: a.slot_id,
+                    preferred: a.preferred,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Réponse 201 d'une candidature, rendue une seule fois. Lien relatif, à préfixer par l'origine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedCandidature {
+    pub event_id: String,
+    pub candidature_id: String,
+    pub participant_secret: String,
+    pub status: CandidatureStatus,
+    pub links: ParticipantLinks,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticipantLinks {
+    /// `/p/<secret>`
+    pub participant: String,
 }

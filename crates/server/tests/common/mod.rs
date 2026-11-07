@@ -127,13 +127,25 @@ pub async fn send_bare(
 
 /// POST JSON avec l'IP visiteur de test ; `body` est envoyé tel quel (texte brut, JSON ou non).
 pub async fn post_raw(router: &Router, uri: &str, body: &str) -> (Response<Body>, String) {
-    let req = Request::builder()
+    post_raw_with(router, uri, body, &[]).await
+}
+
+/// Comme `post_raw`, avec des en-têtes de requête en plus (`X-Link-Secret`…).
+pub async fn post_raw_with(
+    router: &Router,
+    uri: &str,
+    body: &str,
+    headers: &[(&str, &str)],
+) -> (Response<Body>, String) {
+    let mut req = Request::builder()
         .method(Method::POST)
         .uri(uri)
         .header("content-type", "application/json")
-        .header("x-client-ip", TEST_CLIENT_IP)
-        .body(Body::from(body.to_owned()))
-        .unwrap();
+        .header("x-client-ip", TEST_CLIENT_IP);
+    for (name, value) in headers {
+        req = req.header(*name, *value);
+    }
+    let req = req.body(Body::from(body.to_owned())).unwrap();
     let res = router.clone().oneshot(req).await.unwrap();
     let (parts, body) = res.into_parts();
     let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
@@ -150,6 +162,16 @@ pub async fn post_json(
     body: &serde_json::Value,
 ) -> (Response<Body>, String) {
     post_raw(router, uri, &body.to_string()).await
+}
+
+/// POST d'une valeur JSON avec des en-têtes en plus.
+pub async fn post_json_with(
+    router: &Router,
+    uri: &str,
+    body: &serde_json::Value,
+    headers: &[(&str, &str)],
+) -> (Response<Body>, String) {
+    post_raw_with(router, uri, &body.to_string(), headers).await
 }
 
 pub fn header<'a>(res: &'a Response<Body>, name: &str) -> &'a str {

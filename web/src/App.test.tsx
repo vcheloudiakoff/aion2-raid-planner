@@ -6,7 +6,7 @@ import { resetClientForTests } from "./api/client";
 import { REFERENCE_CACHE_KEY } from "./api/reference";
 import { resetLangForTests } from "./i18n";
 import { byText, mount, type Mounted } from "./test/dom";
-import { ORGANIZER, reference } from "./test/fixtures";
+import { EVENT_ID, JOIN, ORGANIZER, PARTICIPANT, publicEvent, reference } from "./test/fixtures";
 
 let m: Mounted | null = null;
 
@@ -155,5 +155,44 @@ describe("routes", () => {
     expect(byText(m.container, "Ton raid est publié")).toBeTruthy();
     expect(m.container.textContent).not.toContain(ORGANIZER);
     expect(document.title).not.toContain(ORGANIZER);
+  });
+
+  it("serves the event page on /e/<id> and the direct form on /j/<secret>, secret out of the title", async () => {
+    lang("fr-FR");
+    localStorage.setItem(
+      REFERENCE_CACHE_KEY,
+      JSON.stringify({ etag: '"e"', data: reference, fetchedAt: "2026-11-06T20:04:00Z" }),
+    );
+    const fetch = vi.fn(async (url: string) => {
+      if (url === `/api/events/${EVENT_ID}` || url === "/api/join") {
+        return new Response(JSON.stringify(publicEvent), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetch);
+    window.history.pushState({}, "", `/e/${EVENT_ID}`);
+    m = mount(<App />);
+    await flush();
+    expect(m.container.querySelector("h1")?.textContent).toMatch(/^Instance Une · /);
+    expect(m.container.textContent).not.toContain("Lien direct");
+    m.unmount();
+
+    window.history.pushState({}, "", `/j/${JOIN}`);
+    m = mount(<App />);
+    await flush();
+    expect(m.container.textContent).toContain("Lien direct : ta candidature est acceptée d'office.");
+    expect(m.container.textContent).not.toContain(JOIN);
+    expect(document.title).not.toContain(JOIN);
+    expect(fetch.mock.calls.some(([url]) => String(url).includes(JOIN))).toBe(false);
+  });
+
+  it("serves the pending participant page on /p/<secret>, secret out of the title", () => {
+    lang("fr-FR");
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    window.history.pushState({}, "", `/p/${PARTICIPANT}`);
+    m = mount(<App />);
+    expect(m.container.querySelector("h1")?.textContent).toBe("Ton lien personnel");
+    expect(m.container.textContent).toContain(`/p/${PARTICIPANT}`);
+    expect(document.title).not.toContain(PARTICIPANT);
   });
 });

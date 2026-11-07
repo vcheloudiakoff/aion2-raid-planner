@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, resetClientForTests } from "./client";
-import { EVENTS_URL, MIN_SUBMIT_DELAY_MS, createEvent, getFormToken, type CreateDeps } from "./events";
+import { EVENTS_URL, MIN_SUBMIT_DELAY_MS, createEvent, getFormToken, type FormDeps } from "./events";
 import type { CreateEvent, CreatedEvent } from "./types";
 
 const input: CreateEvent = {
@@ -38,7 +38,7 @@ function serve(...replies: Response[]) {
   return calls;
 }
 
-function deps(): CreateDeps & { renewToken: ReturnType<typeof vi.fn>; sleep: ReturnType<typeof vi.fn> } {
+function deps(): FormDeps & { renewToken: ReturnType<typeof vi.fn>; sleep: ReturnType<typeof vi.fn> } {
   return { renewToken: vi.fn(async () => "fresh"), sleep: vi.fn(async () => {}) };
 }
 
@@ -63,6 +63,7 @@ describe("createEvent", () => {
     const d = deps();
     expect(await createEvent(input, "old", "", d)).toEqual(created);
     expect(d.renewToken).toHaveBeenCalledTimes(1);
+    expect(d.renewToken).toHaveBeenCalledWith("create");
     expect(d.sleep).toHaveBeenCalledWith(MIN_SUBMIT_DELAY_MS);
     expect(calls.map((c) => sent(c).formToken)).toEqual(["old", "fresh"]);
   });

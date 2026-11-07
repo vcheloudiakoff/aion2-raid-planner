@@ -1,5 +1,7 @@
 //! Noyau pur du planificateur : aucune I/O, aucune horloge système, aucun aléa non injecté.
 
+pub mod candidature;
+pub mod counts;
 pub mod event;
 pub mod reference;
 mod timestamp;

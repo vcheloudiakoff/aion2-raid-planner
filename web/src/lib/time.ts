@@ -25,3 +25,23 @@ export function timeZoneLabel(lang: string, at: Date = new Date()): string {
   if (!zone) return short ?? "";
   return short && short !== zone ? `${zone} (${short})` : zone;
 }
+
+function parts(iso: string, lang: string, options: Intl.DateTimeFormatOptions): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat(lang, options).formatToParts(new Date(iso))) out[p.type] = p.value;
+  return out;
+}
+
+/** Jour court et heure locale d'un instant UTC : « mar. 21:00 », « Tue 21:00 ». */
+export function formatSlot(iso: string, lang: string): string {
+  const p = parts(iso, lang, { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return `${p.weekday} ${p.hour}:${p.minute}`;
+}
+
+/** Jour court et date locale d'un instant UTC : « mar. 11 nov. », « Tue, Nov 11 ». L'année s'ajoute
+ * quand elle diffère de celle de `now`. */
+export function formatDay(iso: string, lang: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  const year = date.getFullYear() !== now.getFullYear() ? { year: "numeric" as const } : {};
+  return new Intl.DateTimeFormat(lang, { weekday: "short", day: "numeric", month: "short", ...year }).format(date);
+}
