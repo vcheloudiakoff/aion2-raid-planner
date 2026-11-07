@@ -3,11 +3,13 @@
 //! *Données exposées*). En `locked`, pour une candidature `accepted` placée dans un groupe retenu,
 //! sa place, le créneau, le nom de salle et ses coéquipiers visibles
 //! (`domain::placement::{participant_placement, teammates}`), réduits à `Pseudo[SRV]`, classe et
-//! équipe. En `open` après un déverrouillage, `backInPreparation`.
+//! équipe. En `open` après un déverrouillage, `backInPreparation`. Pour une candidature `accepted`,
+//! en `open` comme en `locked`, la liste des acceptés de l'événement
+//! (`domain::candidature::accepted_list`), réduits à `Pseudo[SRV]` et classe, et le rang du lecteur.
 
 use std::collections::HashMap;
 
-use domain::candidature::CandidatureStatus;
+use domain::candidature::{CandidatureStatus, accepted_list};
 use domain::event::EventStatus;
 use domain::placement::{self, Assigned, GroupRef, Seat};
 use domain::pseudo_srv::pseudo_srv;
@@ -17,7 +19,8 @@ use sqlx::SqliteConnection;
 use crate::app::AppState;
 use crate::app::queries::public_event;
 use crate::http::dto::{
-    Availability, ParticipantPlacement, ParticipantSeat, ParticipantView, Teammate, TeammateParty,
+    Availability, ParticipantPlacement, ParticipantSeat, ParticipantView, RosterEntry, Teammate,
+    TeammateParty,
 };
 use crate::http::errors::{Code, Problem};
 use crate::infra::{candidatures, events, groups};
@@ -77,11 +80,24 @@ pub async fn load(
         None
     };
     let group_rows = groups::list(conn, event_id).await?;
+    let all = candidatures::list(conn, event_id).await?;
     let back_in_preparation = c.status == CandidatureStatus::Accepted
         && snapshot.status == EventStatus::Open
         && !group_rows.is_empty();
-    let (placement, teammates) =
-        seat_and_teammates(conn, reference, &snapshot, &group_rows, &c.id, c.status).await?;
+    let (placement, teammates) = seat_and_teammates(
+        conn,
+        reference,
+        &snapshot,
+        &group_rows,
+        &all,
+        &c.id,
+        c.status,
+    )
+    .await?;
+    let (accepted_roster, accepted_roster_self) = match roster(reference, &all, &c.id) {
+        Some((entries, own)) => (Some(entries), Some(own)),
+        None => (None, None),
+    };
     Ok(Some(ParticipantView {
         event_id: c.event_id,
         candidature_id: c.id,
@@ -103,7 +119,37 @@ pub async fn load(
         placement,
         teammates,
         back_in_preparation,
+        accepted_roster,
+        accepted_roster_self,
     }))
+}
+
+/// Liste des acceptés vue par la candidature `me` : `None` si elle n'est pas `accepted`
+/// (`domain::candidature::accepted_list`), sinon chaque accepté réduit à `Pseudo[SRV]` et classe, et
+/// le rang de `me` dans la liste.
+fn roster(
+    reference: &ReferenceSet,
+    all: &[candidatures::CandidatureRow],
+    me: &str,
+) -> Option<(Vec<RosterEntry>, usize)> {
+    let statuses: Vec<(&str, CandidatureStatus)> =
+        all.iter().map(|c| (c.id.as_str(), c.status)).collect();
+    let by_id: HashMap<&str, &candidatures::CandidatureRow> =
+        all.iter().map(|c| (c.id.as_str(), c)).collect();
+    let list = accepted_list(me, &statuses)?;
+    // Les ids viennent de `all` : chacun a sa ligne, le rang `own` reste juste.
+    let entries = list
+        .ids
+        .into_iter()
+        .map(|id| {
+            let c = by_id[id];
+            RosterEntry {
+                pseudo_srv: pseudo_srv(reference, &c.pseudo, &c.server),
+                class: c.class.clone(),
+            }
+        })
+        .collect();
+    Some((entries, list.own))
 }
 
 /// Place de la candidature `me` dans un groupe retenu, et ses coéquipiers visibles ; `(None, None)`
@@ -114,11 +160,11 @@ async fn seat_and_teammates(
     reference: &ReferenceSet,
     snapshot: &events::EventSnapshot,
     group_rows: &[groups::GroupRow],
+    others: &[candidatures::CandidatureRow],
     me: &str,
     status: CandidatureStatus,
 ) -> Result<(Option<ParticipantPlacement>, Option<Vec<TeammateParty>>), sqlx::Error> {
     let rows = groups::assignments(conn, &snapshot.id).await?;
-    let others = candidatures::list(conn, &snapshot.id).await?;
     let by_id: HashMap<&str, &candidatures::CandidatureRow> =
         others.iter().map(|c| (c.id.as_str(), c)).collect();
     let assigned: Vec<Assigned<'_>> = rows

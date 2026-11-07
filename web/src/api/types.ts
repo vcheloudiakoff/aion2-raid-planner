@@ -167,8 +167,9 @@ export interface CreatedCandidature {
  * candidature et l'événement public. `discordUrl` présent seulement si `accepted` et que l'événement
  * a un lien. `placement` et `teammates` présents seulement en `locked`, pour une candidature
  * `accepted` placée dans un groupe retenu. `backInPreparation` présent (et vrai) seulement pour une
- * candidature `accepted` d'un événement `open` après un déverrouillage. La confirmation arrive avec
- * l'epic 5. */
+ * candidature `accepted` d'un événement `open` après un déverrouillage. `acceptedRoster` et
+ * `acceptedRosterSelf` présents ensemble, seulement pour une candidature `accepted`, quel que soit le
+ * statut de l'événement. La confirmation arrive avec l'epic 5. */
 export interface ParticipantView {
   eventId: string;
   candidatureId: string;
@@ -186,6 +187,11 @@ export interface ParticipantView {
    * son groupe, dans l'ordre. Membres triés par slot, éventuellement aucun. */
   teammates?: TeammateParty[];
   backInPreparation?: true;
+  /** Toutes les candidatures `accepted` de l'événement, celle-ci comprise, dans l'ordre de
+   * création. */
+  acceptedRoster?: RosterEntry[];
+  /** Rang de cette candidature dans `acceptedRoster`, à partir de 0. */
+  acceptedRosterSelf?: number;
 }
 
 /** Place du participant. `groupNumber` : rang parmi les groupes retenus (« G1 »). */
@@ -210,6 +216,10 @@ export interface Teammate {
   pseudoSrv: string;
   class: string;
 }
+
+/** Une ligne de la liste des acceptés : même forme qu'un coéquipier, `Pseudo[SRV]` et classe, rien
+ * d'autre. */
+export type RosterEntry = Teammate;
 
 /** Lien par lequel une candidature est arrivée : `/j/` direct, `/e/` public. */
 export type Origin = "direct" | "public";

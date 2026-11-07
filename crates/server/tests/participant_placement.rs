@@ -2,7 +2,9 @@
 //! participant `GET /api/participant`. Placement seulement en `locked`, pour une candidature
 //! `accepted` placée dans un groupe retenu ; coéquipiers par équipe, réduits à `pseudoSrv` et `class` ;
 //! jamais le banc pour un titulaire, jamais un autre groupe ni une candidature non `accepted`.
-//! Valeurs fictives.
+//! Story 3-5b : `acceptedRoster`, la liste des acceptés, et `acceptedRosterSelf`, le rang du lecteur,
+//! servis à une candidature `accepted` seulement, réduits à `pseudoSrv` et `class`, jamais sur la page
+//! publique. Valeurs fictives.
 
 mod common;
 
@@ -62,10 +64,20 @@ async fn organizer_view(router: &axum::Router, e: &Event) -> Value {
 }
 
 /// Vue participant, et son corps brut (pour chercher un pseudo qui ne doit pas y être).
-async fn read(router: &axum::Router, c: &Cand) -> (Value, String) {
+async fn read_raw(router: &axum::Router, c: &Cand) -> (Value, String) {
     let (res, text) = send_with(router, Method::GET, VIEW, &[("x-link-secret", &c.secret)]).await;
     assert_eq!(res.status(), StatusCode::OK, "{text}");
     (serde_json::from_str(&text).unwrap(), text)
+}
+
+/// Vue participant, et son corps sans `acceptedRoster` : la liste des acceptés (story 3-5b) nomme par
+/// construction tous les acceptés de l'événement, le confinement de la place et des coéquipiers se
+/// vérifie sur le reste.
+async fn read(router: &axum::Router, c: &Cand) -> (Value, String) {
+    let (v, _) = read_raw(router, c).await;
+    let mut rest = v.clone();
+    rest.as_object_mut().unwrap().remove("acceptedRoster");
+    (v, rest.to_string())
 }
 
 /// Id du groupe retenu `n` (0 = G1) de la vue organisateur.
@@ -498,4 +510,222 @@ async fn an_edit_after_an_unlock_answers_back_in_preparation_without_a_seat() {
     assert_eq!(v["cp"], 2000);
     assert_unplaced(&v, "edit");
     assert_eq!(v["backInPreparation"], true);
+}
+
+/// Clés triées d'un objet JSON.
+fn keys_of(x: &Value) -> Vec<String> {
+    let mut keys: Vec<_> = x.as_object().unwrap().keys().cloned().collect();
+    keys.sort_unstable();
+    keys
+}
+
+/// Vrai si `key` apparaît comme clé d'objet, à n'importe quelle profondeur de `v`.
+fn has_key(v: &Value, key: &str) -> bool {
+    match v {
+        Value::Object(map) => map.contains_key(key) || map.values().any(|x| has_key(x, key)),
+        Value::Array(items) => items.iter().any(|x| has_key(x, key)),
+        _ => false,
+    }
+}
+
+/// `acceptedRoster` de `v`, chaque ligne vérifiée réduite à `pseudoSrv` et `class`.
+fn roster_of(v: &Value) -> &Vec<Value> {
+    let list = v["acceptedRoster"].as_array().unwrap();
+    for item in list {
+        assert_eq!(keys_of(item), ["class", "pseudoSrv"], "{item}");
+    }
+    list
+}
+
+fn assert_no_roster(v: &Value, ctx: &str) {
+    assert!(v.get("acceptedRoster").is_none(), "{ctx}: {v}");
+    assert!(v.get("acceptedRosterSelf").is_none(), "{ctx}: {v}");
+}
+
+/// Un événement ouvert : trois `accepted` (créés Wren, Vesna, Ulrik, mais datés à rebours pour
+/// que l'ordre de création se lise dans `created_at`), un `pending`, un `rejected` et un `withdrawn`.
+struct Roster {
+    e: Event,
+    accepted: [Cand; 3],
+    pending: Cand,
+    rejected: Cand,
+    withdrawn: Cand,
+}
+
+async fn roster(state: &AppState, router: &axum::Router) -> Roster {
+    let e = create(state, router, "all").await;
+    let wren = player(state, router, &e, "Wren", "templar").await;
+    let vesna = player(state, router, &e, "Vesna", "cleric").await;
+    let ulrik = player(state, router, &e, "Ulrik", "gladiator").await;
+    let pending = candidate(state, router, &e, "Pendor", false).await;
+    let rejected = player(state, router, &e, "Rejka", "chanter").await;
+    set_status(state, &rejected, "rejected").await;
+    let withdrawn = player(state, router, &e, "Wilda", "chanter").await;
+    set_status(state, &withdrawn, "withdrawn").await;
+    for (c, at) in [
+        (&ulrik, "2026-11-06T09:00:01Z"),
+        (&vesna, "2026-11-06T09:00:02Z"),
+        (&wren, "2026-11-06T09:00:03Z"),
+    ] {
+        sql(
+            state,
+            "UPDATE candidatures SET created_at = ? WHERE id = ?",
+            &[at, &c.id],
+        )
+        .await;
+    }
+    Roster {
+        e,
+        accepted: [ulrik, vesna, wren],
+        pending,
+        rejected,
+        withdrawn,
+    }
+}
+
+/// Liste attendue du [`Roster`] : Ulrik, Vesna, Wren.
+fn expected_roster(o: &Value, r: &Roster) -> Value {
+    json!([
+        mate(o, &r.accepted[0], "gladiator"),
+        mate(o, &r.accepted[1], "cleric"),
+        mate(o, &r.accepted[2], "templar"),
+    ])
+}
+
+#[tokio::test]
+async fn an_accepted_candidature_sees_every_accepted_one_in_creation_order_and_its_rank() {
+    let (state, router) = setup("accepted_list").await;
+    let r = roster(&state, &router).await;
+    let o = organizer_view(&router, &r.e).await;
+    let expected = expected_roster(&o, &r);
+    for (own, c) in r.accepted.iter().enumerate() {
+        let (v, body) = read_raw(&router, c).await;
+        assert_eq!(v["event"]["status"], "open");
+        assert_eq!(*roster_of(&v), *expected.as_array().unwrap(), "{body}");
+        assert_eq!(v["acceptedRosterSelf"], own, "{body}");
+        for absent in ["Pendor", "Rejka", "Wilda"] {
+            assert!(!body.contains(absent), "{absent}: {body}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn two_identical_accepted_candidatures_keep_their_order_and_the_reader_its_own_rank() {
+    let (state, router) = setup("accepted_list_twins").await;
+    let e = create(&state, &router, "all").await;
+    // Même pseudo, même serveur, même classe, même seconde de création : l'ordre d'insertion
+    // départage.
+    let first = player(&state, &router, &e, "Jumeau", "cleric").await;
+    let second = player(&state, &router, &e, "Jumeau", "cleric").await;
+    for (c, own) in [(&first, 0), (&second, 1)] {
+        let (v, body) = read_raw(&router, c).await;
+        let list = roster_of(&v);
+        assert_eq!(list.len(), 2, "{body}");
+        assert_eq!(list[0], list[1], "{body}");
+        assert_eq!(v["acceptedRosterSelf"], own, "{body}");
+    }
+}
+
+#[tokio::test]
+async fn a_candidature_that_is_not_accepted_sees_no_accepted_list() {
+    let (state, router) = setup("accepted_list_not_accepted").await;
+    let r = roster(&state, &router).await;
+    for (c, status) in [
+        (&r.pending, "pending"),
+        (&r.rejected, "rejected"),
+        (&r.withdrawn, "withdrawn"),
+    ] {
+        let (v, body) = read_raw(&router, c).await;
+        assert_eq!(v["status"], status);
+        assert_no_roster(&v, status);
+        for absent in ["Ulrik", "Vesna", "Wren"] {
+            assert!(!body.contains(absent), "{status} {absent}: {body}");
+        }
+    }
+    // Locked aussi : rien pour un `pending`.
+    lock(&router, &r.e, &[&r.e.slots[0]]).await;
+    let (v, _) = read_raw(&router, &r.pending).await;
+    assert_eq!(v["event"]["status"], "locked");
+    assert_no_roster(&v, "locked pending");
+}
+
+#[tokio::test]
+async fn locking_keeps_the_same_list_next_to_the_seat_and_teammates() {
+    let (state, router) = setup("accepted_list_locked").await;
+    let r = roster(&state, &router).await;
+    let o = organizer_view(&router, &r.e).await;
+    let pending_name = pseudo_srv(&o, &r.pending);
+    let (before, _) = read_raw(&router, &r.accepted[1]).await;
+    let g1 = group(&lock(&router, &r.e, &[&r.e.slots[0]]).await, 0);
+    place(
+        &router,
+        &r.e,
+        vec![
+            starter(&r.accepted[0], &g1, 1, 1),
+            starter(&r.accepted[1], &g1, 1, 2),
+            benched(&r.accepted[2], &g1, 1),
+        ],
+    )
+    .await;
+    let (v, body) = read_raw(&router, &r.accepted[1]).await;
+    assert_eq!(v["event"]["status"], "locked");
+    assert!(v.get("placement").is_some(), "{v}");
+    assert!(v.get("teammates").is_some(), "{v}");
+    assert_eq!(roster_of(&v), roster_of(&before), "{body}");
+    assert_eq!(v["acceptedRoster"], expected_roster(&o, &r), "{body}");
+    assert_eq!(v["acceptedRosterSelf"], 1, "{body}");
+    assert!(
+        roster_of(&v)
+            .iter()
+            .all(|x| x["pseudoSrv"] != pending_name.as_str()),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn an_edit_carries_the_list_and_a_withdrawal_drops_it() {
+    let (state, router) = setup("accepted_list_commands").await;
+    let r = roster(&state, &router).await;
+    let o = organizer_view(&router, &r.e).await;
+    let c = &r.accepted[0];
+    let body = json!({
+        "pseudo": "Ulrik",
+        "server": "israphel",
+        "class": "gladiator",
+        "cp": 2000,
+        "availabilities": [{ "slotId": r.e.slots[0], "preferred": false }],
+    });
+    let headers = [("x-link-secret", c.secret.as_str())];
+    let (res, text) =
+        post_json_with(&router, "/api/participant/candidature", &body, &headers).await;
+    assert_eq!(res.status(), StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["cp"], 2000);
+    assert_eq!(v["acceptedRoster"], expected_roster(&o, &r), "{text}");
+    assert_eq!(v["acceptedRosterSelf"], 0, "{text}");
+    let (res, text) =
+        post_json_with(&router, "/api/participant/withdrawal", &json!({}), &headers).await;
+    assert_eq!(res.status(), StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["status"], "withdrawn");
+    assert_no_roster(&v, "withdrawal");
+}
+
+#[tokio::test]
+async fn the_public_event_never_carries_the_list() {
+    let (state, router) = setup("accepted_list_public").await;
+    let r = roster(&state, &router).await;
+    for locked in [false, true] {
+        if locked {
+            lock(&router, &r.e, &[&r.e.slots[0]]).await;
+        }
+        let (res, body) = send(&router, Method::GET, &format!("/api/events/{}", r.e.id)).await;
+        assert_eq!(res.status(), StatusCode::OK, "{body}");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert!(!has_key(&v, "acceptedRoster"), "{body}");
+        assert!(!has_key(&v, "acceptedRosterSelf"), "{body}");
+        for pseudo in ["Ulrik", "Vesna", "Wren", "Pendor", "Rejka", "Wilda"] {
+            assert!(!body.contains(pseudo), "{pseudo}: {body}");
+        }
+    }
 }

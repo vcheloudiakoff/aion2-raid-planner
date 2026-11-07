@@ -3,7 +3,8 @@
 // Discord des acceptés, le résumé public, la candidature en lecture et les actions « Modifier » et
 // « Me retirer ». En `locked`, entre le statut et le lien Discord, la place du joueur, sa salle et
 // ses coéquipiers (`MyPlacement`) ; en `open` après un déverrouillage, « Le raid est revenu en
-// préparation. ». La région live annonce les changements de statut et de ligne de placement.
+// préparation. ». Juste dessous, pour une candidature acceptée, la liste des acceptés
+// (`AcceptedList`). La région live annonce les changements de statut et de ligne de placement.
 // Relecture silencieuse toutes les 10 s, jamais pendant une modification, arrêtée sur un lien mort
 // (à la lecture ou sous une commande, qui oublie son secret sur cet appareil), un raid annulé ou une
 // candidature retirée. Le secret part en en-tête seulement et n'apparaît que dans la puce, jamais
@@ -22,6 +23,7 @@ import type {
   ReferenceSet,
   SubmitCandidature,
 } from "../api/types";
+import { AcceptedList } from "../components/AcceptedList";
 import { CandidatureForm } from "../components/CandidatureForm";
 import { ConfirmSheet } from "../components/ConfirmSheet";
 import { STATUS_STYLE } from "../components/CandidatureRow";
@@ -351,6 +353,7 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
         </p>
       )}
       {view && <MyPlacement view={view} reference={reference} now={deps.now} />}
+      {view && <AcceptedList view={view} reference={reference} />}
       {/* Seuls les changements de statut et de ligne de placement sont annoncés (EXPERIENCE.md
           *Rafraîchissement*, SPEC epic 3 CAP-6). */}
       <p aria-live="polite" className="sr-only">

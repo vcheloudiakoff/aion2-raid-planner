@@ -416,6 +416,32 @@ pub fn organizer_may(
     }
 }
 
+/// Liste des acceptés vue par une candidature (SPEC epic 3 CAP-6, AD-4 *Données exposées*) : les ids
+/// de toutes les candidatures `accepted` de l'événement, dans l'ordre reçu (l'ordre de création), et
+/// le rang de la candidature lectrice parmi elles.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcceptedList<'a> {
+    pub ids: Vec<&'a str>,
+    /// Rang de la candidature lectrice dans `ids`, à partir de 0.
+    pub own: usize,
+}
+
+/// Liste des acceptés vue par la candidature `me` : seulement si `me` figure parmi `candidatures`
+/// avec le statut `accepted`, quel que soit le statut de l'événement. Elle y figure alors, à son
+/// rang. Jamais un `pending`, un `rejected` ni un `withdrawn`.
+pub fn accepted_list<'a>(
+    me: &str,
+    candidatures: &[(&'a str, CandidatureStatus)],
+) -> Option<AcceptedList<'a>> {
+    let ids: Vec<&'a str> = candidatures
+        .iter()
+        .filter(|&&(_, status)| status == CandidatureStatus::Accepted)
+        .map(|&(id, _)| id)
+        .collect();
+    let own = ids.iter().position(|&id| id == me)?;
+    Some(AcceptedList { ids, own })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -931,5 +957,50 @@ mod tests {
         );
         assert_eq!(D::Accepted.status(), Accepted);
         assert_eq!(D::Rejected.status(), Rejected);
+    }
+
+    const ROSTER: &[(&str, CandidatureStatus)] = &[
+        ("a", CandidatureStatus::Accepted),
+        ("p", CandidatureStatus::Pending),
+        ("b", CandidatureStatus::Accepted),
+        ("r", CandidatureStatus::Rejected),
+        ("w", CandidatureStatus::Withdrawn),
+        ("c", CandidatureStatus::Accepted),
+    ];
+
+    #[test]
+    fn an_accepted_candidature_sees_every_accepted_one_in_order_and_its_own_rank() {
+        for (me, own) in [("a", 0), ("b", 1), ("c", 2)] {
+            assert_eq!(
+                accepted_list(me, ROSTER),
+                Some(AcceptedList {
+                    ids: vec!["a", "b", "c"],
+                    own
+                }),
+                "{me}"
+            );
+        }
+        // Seule acceptée : elle se voit seule.
+        assert_eq!(
+            accepted_list(
+                "solo",
+                &[
+                    ("solo", CandidatureStatus::Accepted),
+                    ("q", CandidatureStatus::Pending)
+                ]
+            ),
+            Some(AcceptedList {
+                ids: vec!["solo"],
+                own: 0
+            })
+        );
+    }
+
+    #[test]
+    fn a_candidature_that_is_not_accepted_or_unknown_sees_no_list() {
+        for me in ["p", "r", "w", "unknown"] {
+            assert_eq!(accepted_list(me, ROSTER), None, "{me}");
+        }
+        assert_eq!(accepted_list("a", &[]), None);
     }
 }

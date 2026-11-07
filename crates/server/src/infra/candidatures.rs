@@ -150,15 +150,17 @@ pub async fn load_in_event(
 }
 
 /// Toutes les candidatures de l'événement, tous statuts, dans l'ordre de création (`created_at`
-/// puis `id`), chacune avec ses disponibilités triées par début de créneau. Lue seulement par le
-/// droit organisateur. Deux requêtes, quel que soit le nombre de candidatures.
+/// puis `rowid`, l'ordre d'insertion à la seconde près), chacune avec ses disponibilités triées par
+/// début de créneau. Lue par la vue organisateur et par la vue participant (coéquipiers, liste des
+/// acceptés), qui n'en expose que ce que la règle du domaine permet. Deux requêtes, quel que soit le
+/// nombre de candidatures.
 pub async fn list(
     conn: &mut SqliteConnection,
     event_id: &str,
 ) -> Result<Vec<CandidatureRow>, sqlx::Error> {
     let rows: Vec<(String, String, String, String, i64, String, String)> = sqlx::query_as(
         "SELECT id, pseudo, server, class, cp, status, origin FROM candidatures \
-         WHERE event_id = ? ORDER BY created_at, id",
+         WHERE event_id = ? ORDER BY created_at, rowid",
     )
     .bind(event_id)
     .fetch_all(&mut *conn)

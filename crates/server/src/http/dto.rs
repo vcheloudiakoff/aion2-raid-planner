@@ -435,6 +435,14 @@ pub struct ParticipantView {
     pub teammates: Option<Vec<TeammateParty>>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub back_in_preparation: bool,
+    /// Pour une candidature `accepted`, quel que soit le statut de l'événement : toutes les
+    /// candidatures `accepted` de l'événement, elle comprise, dans l'ordre de création. Absent sinon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accepted_roster: Option<Vec<RosterEntry>>,
+    /// Rang de la candidature lectrice dans `accepted_roster`, à partir de 0 ; présent avec lui
+    /// seulement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accepted_roster_self: Option<usize>,
 }
 
 /// Place du participant dans le verrouillage courant. `groupNumber` : rang du groupe parmi les
@@ -479,6 +487,10 @@ pub struct Teammate {
     pub pseudo_srv: String,
     pub class: String,
 }
+
+/// Une ligne de la liste des acceptés : même forme qu'un coéquipier, `Pseudo[SRV]` et classe, rien
+/// d'autre (AD-4 *Données exposées*).
+pub type RosterEntry = Teammate;
 
 /// Un créneau coché par une candidature, et sa préférence. Partagé par les vues participant et
 /// organisateur.

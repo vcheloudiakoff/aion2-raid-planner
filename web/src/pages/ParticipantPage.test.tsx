@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate, type NavigateFunction } from "react-router";
 import { resetClientForTests } from "../api/client";
 import { LINKS_KEY } from "../api/links";
-import type { CandidatureStatus, ParticipantPlacement, ParticipantView } from "../api/types";
+import type { CandidatureStatus, ParticipantPlacement, ParticipantView, ReferenceSet } from "../api/types";
 import { resetLangForTests } from "../i18n";
 import { byText, click, fill, key, mount, type Mounted, spyStorageWrites } from "../test/dom";
 import {
@@ -77,7 +77,7 @@ function Probe() {
   return null;
 }
 
-async function render(state?: unknown) {
+async function render(state?: unknown, ref: ReferenceSet | null = reference) {
   m = mount(
     <MemoryRouter initialEntries={[{ pathname: `/p/${PARTICIPANT}`, state }]}>
       <Routes>
@@ -85,7 +85,7 @@ async function render(state?: unknown) {
           path="/p/:secret"
           element={
             <>
-              <ParticipantPage reference={reference} origin="https://raid.example.org" />
+              <ParticipantPage reference={ref} origin="https://raid.example.org" />
               <Probe />
             </>
           }
@@ -854,6 +854,112 @@ describe("placement", () => {
     current = starterView();
     await tick();
     expect(live().textContent).toBe("Statut : Acceptée Titulaire · Équipe 2, slot 4 · Soin");
+  });
+});
+
+describe("accepted list", () => {
+  const roster = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ pseudoSrv: `Joueur${i}[SB]`, class: "c2" }));
+  /** Trois acceptés dont le lecteur (Nyra), au milieu. */
+  const acceptedRoster = [
+    { pseudoSrv: "Kael[SA]", class: "c2" },
+    { pseudoSrv: "Nyra[SA]", class: "c1" },
+    { pseudoSrv: "Lio[SB]", class: "c1" },
+  ];
+  const listed = (patch: Partial<ParticipantView> = {}, event: Partial<ParticipantView["event"]> = {}) =>
+    viewWith({ status: "accepted", acceptedRoster, acceptedRosterSelf: 1, ...patch }, event);
+  const section = () => q<HTMLDetailsElement>('[data-testid="accepted"]');
+  const rows = () => [...m.container.querySelectorAll('[data-testid="accepted"] li')].map((li) => li.textContent);
+  const marked = () => [...m.container.querySelectorAll('[data-testid="accepted"] li')].map((li) => li.hasAttribute("data-me"));
+
+  it("accepted in an open raid: « Acceptés (N) », Pseudo[SRV] in mono, the class label, « toi » at the server's rank", async () => {
+    serve(() => json(listed()));
+    await render();
+    const s = section()!;
+    expect(s.querySelector("summary")!.textContent).toBe("Acceptés (3)");
+    expect(s.open).toBe(true);
+    expect(rows()).toEqual(["Kael[SA]Classe Dégâts", "Nyra[SA]Classe Sointoi", "Lio[SB]Classe Soin"]);
+    expect(s.querySelector("li .font-mono")!.textContent).toBe("Kael[SA]");
+    expect(marked()).toEqual([false, true, false]);
+  });
+
+  it("two identical lines: only the one at acceptedRosterSelf is marked", async () => {
+    const twin = { pseudoSrv: "Nyra[SA]", class: "c1" };
+    serve(() => json(listed({ acceptedRoster: [twin, twin], acceptedRosterSelf: 1 })));
+    await render();
+    expect(marked()).toEqual([false, true]);
+  });
+
+  it("without the reference, the class falls back to its id", async () => {
+    serve(() => json(listed()));
+    await render(undefined, null);
+    expect(rows()).toEqual(["Kael[SA]c2", "Nyra[SA]c1toi", "Lio[SB]c1"]);
+  });
+
+  it("locked: below the placement and the teammates", async () => {
+    serve(() =>
+      json(
+        listed(
+          {
+            placement: {
+              groupNumber: 1,
+              slotId: "slot_a",
+              startsAt: "2030-01-08T20:00:00Z",
+              roomName: "Ludra-7KQ2",
+              seat: { kind: "starter", party: 1, index: 1 },
+            },
+            teammates: [{ party: 1, members: [{ pseudoSrv: "Kael[SA]", class: "c2" }] }],
+          },
+          { status: "locked" },
+        ),
+      ),
+    );
+    await render();
+    const team = q('[data-testid="teammates"]')!;
+    expect(team.compareDocumentPosition(section()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(rows()).toHaveLength(3);
+  });
+
+  it("absent unless the server sends it: pending, rejected, withdrawn, and accepted without the field", async () => {
+    for (const status of ["pending", "rejected", "withdrawn", "accepted"] as CandidatureStatus[]) {
+      serve(() => json(viewWith({ status })));
+      await render();
+      expect(q('[data-testid="status"]')).not.toBeNull();
+      expect(section(), status).toBeNull();
+      m.unmount();
+    }
+    m = mount(<div />);
+  });
+
+  it("folded from 15 accepted, open below, and a toggle survives a refresh", async () => {
+    serve(() => json(listed({ acceptedRoster: roster(15), acceptedRosterSelf: 0 })));
+    await render();
+    expect(section()!.open).toBe(false);
+    expect(section()!.querySelector("summary")!.textContent).toBe("Acceptés (15)");
+    m.unmount();
+
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    serve(() => json(listed({ acceptedRoster: roster(14), acceptedRosterSelf: 0 })));
+    await render();
+    expect(section()!.open).toBe(true);
+    await act(async () => {
+      section()!.open = false;
+      section()!.dispatchEvent(new Event("toggle"));
+    });
+    await tick();
+    expect(section()!.open).toBe(false);
+  });
+
+  it("accepted while the page is open with 15 accepted: the list appears folded", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let current: ParticipantView = viewWith({ status: "pending" });
+    serve(() => json(current));
+    await render();
+    expect(section()).toBeNull();
+    current = listed({ acceptedRoster: roster(15), acceptedRosterSelf: 3 });
+    await tick();
+    expect(section()!.open).toBe(false);
+    expect(marked()[3]).toBe(true);
   });
 });
 

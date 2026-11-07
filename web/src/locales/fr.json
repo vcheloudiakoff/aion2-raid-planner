@@ -315,6 +315,8 @@
   "participant.placement.party": "Équipe {n}",
   "participant.placement.alone": "Personne d'autre n'est placé pour l'instant.",
   "participant.backInPreparation": "Le raid est revenu en préparation.",
+  "participant.accepted.title": "Acceptés ({n})",
+  "participant.accepted.me": "toi",
   "banner.offline": "Hors ligne",
   "banner.offlineSince": "Hors ligne · dernières données de {time}",
   "banner.newVersion": "Nouvelle version",
