@@ -119,6 +119,18 @@ describe("new event form", () => {
     expect(m.container.textContent).toMatch(/Heures en Asia\/Tokyo/);
   });
 
+  it("lets the slot date take the row width and keeps the duration narrow", () => {
+    serve();
+    render();
+    const date = slotDate(0).className.split(" ");
+    const duration = q<HTMLInputElement>('[data-testid="slot-0"] input[type="number"]').className.split(" ");
+    // `w-full` sur la durée écrasait `w-16` et réduisait le champ date à rien.
+    expect(date).toContain("flex-1");
+    expect(date).not.toContain("w-full");
+    expect(duration).toContain("w-16");
+    expect(duration).not.toContain("w-full");
+  });
+
   it("keeps Publish disabled with its reason until every slot has a date", () => {
     serve();
     render();

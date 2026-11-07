@@ -39,6 +39,9 @@ export function SlotInputs({
   children,
 }: Props) {
   useLang();
+  // `controlClass` porte `w-full` : dans une ligne, il écraserait la largeur fixe de la durée et
+  // réduirait le champ date à rien. La ligne gère elle-même les largeurs.
+  const rowControl = controlClass.replace(" w-full", "");
   return (
     <div className="flex items-center gap-2">
       <input
@@ -46,7 +49,7 @@ export function SlotInputs({
         aria-label={dateLabel}
         value={local}
         onChange={(e) => onLocal(e.target.value)}
-        className={`${controlClass} mt-0 flex-1 px-2`}
+        className={`${rowControl} mt-0 flex-1 px-2`}
         {...dateAria}
       />
       <input
@@ -58,7 +61,7 @@ export function SlotInputs({
         value={duration}
         placeholder={instanceDuration !== undefined ? String(instanceDuration) : ""}
         {...numberInput(onDuration)}
-        className={`${controlClass} mt-0 w-16 shrink-0 px-2 text-center tabular-nums`}
+        className={`${rowControl} mt-0 w-16 shrink-0 px-2 text-center tabular-nums`}
         {...durationAria}
       />
       <span className="text-meta text-ink-secondary">{t("editor.slot.minutes")}</span>
