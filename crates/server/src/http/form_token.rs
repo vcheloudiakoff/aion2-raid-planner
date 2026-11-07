@@ -8,8 +8,8 @@
 use std::time::Duration;
 
 use axum::Json;
-use axum::extract::rejection::QueryRejection;
-use axum::extract::{Query, State};
+use axum::extract::rejection::{JsonRejection, QueryRejection};
+use axum::extract::{FromRequest, Query, Request, State};
 use axum::response::{IntoResponse, Response};
 use data_encoding::BASE64URL_NOPAD;
 use domain::Timestamp;
@@ -155,6 +155,35 @@ impl<T> FormEnvelope<T> {
         }
         let token = self.form_token.as_deref().ok_or(Code::FormTokenInvalid)?;
         tokens.verify(token, class, now)
+    }
+}
+
+/// Corps JSON d'une route de commande. Tout rejet de `Json` (corps illisible, champ manquant ou de
+/// mauvais type, `Content-Type` absent) devient 400 `form.malformed` en problem+json ; ni le corps ni
+/// le détail du rejet ne sont journalisés, car ils peuvent contenir un secret ou une donnée de joueur.
+#[derive(Debug)]
+pub struct FormJson<T>(pub T);
+
+impl<S, T> FromRequest<S> for FormJson<T>
+where
+    Json<T>: FromRequest<S, Rejection = JsonRejection>,
+    S: Send + Sync,
+{
+    type Rejection = Code;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        match Json::<T>::from_request(req, state).await {
+            Ok(Json(value)) => Ok(Self(value)),
+            Err(rejection) => {
+                // Le statut seul distingue 413, 415 et corps illisible ; jamais le détail ni le corps.
+                tracing::info!(
+                    code = Code::FormMalformed.as_str(),
+                    rejection_status = rejection.status().as_u16(),
+                    "form refused"
+                );
+                Err(Code::FormMalformed)
+            }
+        }
     }
 }
 

@@ -1,12 +1,12 @@
 //! Bornes des champs saisis par un visiteur (AD-7). Fonctions pures, une erreur typée par cas : la
 //! couche `http` les traduit en codes d'erreur, jamais en phrases.
 
-/// Longueur maximale d'un pseudo, en caractères. `[ASSUMPTION]` à confirmer contre le client du jeu.
-pub const PSEUDO_MAX_CHARS: usize = 32;
+/// Longueur maximale d'un pseudo, en caractères (SPEC de l'epic 2, *Assumptions*).
+pub const PSEUDO_MAX_CHARS: usize = 16;
 /// Longueur maximale d'une note d'événement, en caractères.
 pub const NOTE_MAX_CHARS: usize = 280;
-/// CP maximal accepté. `[ASSUMPTION]`
-pub const CP_MAX: i64 = 1_000_000;
+/// CP maximal accepté (SPEC de l'epic 2, *Assumptions*).
+pub const CP_MAX: i64 = 999_999;
 /// Longueur maximale d'un lien Discord, en caractères.
 pub const DISCORD_URL_MAX_CHARS: usize = 256;
 /// Hôtes admis pour `discord_url`, comparés exactement (casse ASCII ignorée).
@@ -42,7 +42,7 @@ pub enum FieldError {
     DiscordCharset,
 }
 
-/// Pseudo : 1 à 32 caractères, tous `char::is_alphanumeric` (lettres de toute écriture et chiffres).
+/// Pseudo : 1 à 16 caractères, tous `char::is_alphanumeric` (lettres de toute écriture et chiffres).
 pub fn pseudo(value: &str) -> Result<(), FieldError> {
     let count = value.chars().count();
     if count == 0 {
@@ -69,7 +69,7 @@ pub fn note(value: &str) -> Result<(), FieldError> {
     Ok(())
 }
 
-/// CP : entier de 0 à 1 000 000.
+/// CP : entier de 0 à 999 999.
 pub fn cp(value: i64) -> Result<u32, FieldError> {
     if (0..=CP_MAX).contains(&value) {
         // Borné ci-dessus : tient dans un `u32`.
@@ -125,11 +125,11 @@ mod tests {
     fn pseudo_bounds() {
         assert_eq!(pseudo(""), Err(FieldError::PseudoEmpty));
         assert_eq!(pseudo("a"), Ok(()));
-        assert_eq!(pseudo(&"a".repeat(32)), Ok(()));
-        assert_eq!(pseudo(&"a".repeat(33)), Err(FieldError::PseudoTooLong));
+        assert_eq!(pseudo(&"a".repeat(16)), Ok(()));
+        assert_eq!(pseudo(&"a".repeat(17)), Err(FieldError::PseudoTooLong));
         // Bornes en caractères, pas en octets.
-        assert_eq!(pseudo(&"é".repeat(32)), Ok(()));
-        assert_eq!(pseudo(&"한".repeat(33)), Err(FieldError::PseudoTooLong));
+        assert_eq!(pseudo(&"é".repeat(16)), Ok(()));
+        assert_eq!(pseudo(&"한".repeat(17)), Err(FieldError::PseudoTooLong));
     }
 
     #[test]
@@ -170,8 +170,8 @@ mod tests {
     fn cp_bounds() {
         assert_eq!(cp(0), Ok(0));
         assert_eq!(cp(1), Ok(1));
-        assert_eq!(cp(1_000_000), Ok(1_000_000));
-        assert_eq!(cp(1_000_001), Err(FieldError::CpOutOfRange));
+        assert_eq!(cp(999_999), Ok(999_999));
+        assert_eq!(cp(1_000_000), Err(FieldError::CpOutOfRange));
         assert_eq!(cp(-1), Err(FieldError::CpOutOfRange));
         assert_eq!(cp(i64::MAX), Err(FieldError::CpOutOfRange));
     }

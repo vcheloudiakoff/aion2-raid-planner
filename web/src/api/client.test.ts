@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, TIMEOUT_MS, getConditional, getJson, getStatus, remember, resetClientForTests } from "./client";
+import {
+  ApiError,
+  TIMEOUT_MS,
+  getConditional,
+  getJson,
+  getStatus,
+  postJson,
+  remember,
+  resetClientForTests,
+} from "./client";
 
 type Reply = { status: number; headers?: Record<string, string>; body?: unknown };
 
@@ -166,5 +175,39 @@ describe("linkSecret", () => {
     expect(calls[2].headers["If-None-Match"]).toBe('"a"');
     expect(await getJson("/api/events/e", { linkSecret: other })).toBe("for B");
     expect(calls[3].headers["If-None-Match"]).toBe('"b"');
+  });
+});
+
+describe("postJson", () => {
+  const problem = { "Content-Type": "application/problem+json" };
+
+  it("posts JSON without conditional headers and returns the body", async () => {
+    const calls = serve({ status: 201, headers: json, body: { id: "x" } });
+    expect(await postJson("/api/events", { a: 1 })).toEqual({ id: "x" });
+    expect(calls[0].headers["Content-Type"]).toBe("application/json");
+    expect(calls[0].headers["If-None-Match"]).toBeUndefined();
+    expect(calls[0].headers["X-Link-Secret"]).toBeUndefined();
+  });
+
+  it("reads code and fields from a problem", async () => {
+    serve({
+      status: 400,
+      headers: problem,
+      body: { type: "about:blank", title: "Bad Request", status: 400, code: "reference.unknown", fields: { region: "reference.unknown", note: 3 } },
+    });
+    const err = await postJson("/api/events", {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe("reference.unknown");
+    // Une valeur qui n'est pas un code est ignorée.
+    expect((err as ApiError).fields).toEqual({ region: "reference.unknown" });
+  });
+
+  it("has no fields on a problem without them, and flags offline when unreachable", async () => {
+    serve({ status: 503, headers: problem, body: { code: "limit.paused" } }, new TypeError("Failed to fetch"));
+    const err = (await postJson("/api/events", {}).catch((e: unknown) => e)) as ApiError;
+    expect([err.status, err.code, err.fields]).toEqual([503, "limit.paused", {}]);
+    const down = (await postJson("/api/events", {}).catch((e: unknown) => e)) as ApiError;
+    expect(down.status).toBe(0);
+    expect(getStatus().offline).toBe(true);
   });
 });

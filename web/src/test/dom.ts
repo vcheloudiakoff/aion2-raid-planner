@@ -45,3 +45,12 @@ export function byText(root: ParentNode, text: string): HTMLElement {
   if (!el) throw new Error(`no element with text ${text}`);
   return el;
 }
+
+/** Saisie comme au clavier : passe par le setter natif pour que React voie le changement. */
+export function fill(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
+  act(() => {
+    setter?.call(el, value);
+    el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
+  });
+}

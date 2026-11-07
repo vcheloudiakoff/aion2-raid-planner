@@ -57,9 +57,10 @@ async fn memory_database_shares_one_base_across_pools() {
 }
 
 #[tokio::test]
-async fn only_links_table_exists() {
-    // Aucune table métier avant l'epic 2 : seuls les liens secrets (1-6).
-    let db = memory_db("only_links_table").await;
+async fn tables_are_links_and_the_epic_2_model() {
+    // Liens secrets (1-6), puis le modèle de l'epic 2 (2-1) ; groupes, placements et confirmations
+    // arrivent avec l'epic 3.
+    let db = memory_db("epic_2_tables").await;
     let tables: Vec<(String,)> = sqlx::query_as(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
          ORDER BY name",
@@ -67,9 +68,18 @@ async fn only_links_table_exists() {
     .fetch_all(&db.read)
     .await
     .unwrap();
+    let names: Vec<_> = tables.iter().map(|(n,)| n.as_str()).collect();
     assert_eq!(
-        tables,
-        vec![("_sqlx_migrations".to_owned(),), ("links".to_owned(),)]
+        names,
+        [
+            "_sqlx_migrations",
+            "availabilities",
+            "candidatures",
+            "class_bounds",
+            "events",
+            "links",
+            "slots",
+        ]
     );
 }
 

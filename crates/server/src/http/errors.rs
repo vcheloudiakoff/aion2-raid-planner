@@ -4,9 +4,12 @@
 //! du statut, le client traduit `errors.<code>` depuis ses locales (AD-12). La sous-commande
 //! `list-error-codes` imprime les codes ; la CI les vérifie contre `fr.json` et `en.json`.
 
+use std::collections::BTreeMap;
+
 use axum::http::StatusCode;
 use axum::http::header::{CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 use axum::response::{IntoResponse, Response};
+use domain::event::{EventError, FieldErrors};
 use serde::Serialize;
 
 pub const PROBLEM_JSON: &str = "application/problem+json";
@@ -50,6 +53,12 @@ codes! {
     AuthMissing => "auth.missing", UNAUTHORIZED;
     AuthNotFound => "auth.not_found", NOT_FOUND;
     AuthWrongRight => "auth.wrong_right", FORBIDDEN;
+    EventClassBoundsInvalid => "event.class_bounds_invalid", BAD_REQUEST;
+    EventDiscordUrlInvalid => "event.discord_url_invalid", BAD_REQUEST;
+    EventFactionScopeNotAllowed => "event.faction_scope_not_allowed", BAD_REQUEST;
+    EventMinCpOutOfRange => "event.min_cp_out_of_range", BAD_REQUEST;
+    EventNoteInvalid => "event.note_invalid", BAD_REQUEST;
+    FormMalformed => "form.malformed", BAD_REQUEST;
     FormRejected => "form.rejected", BAD_REQUEST;
     FormTokenInvalid => "form.token_invalid", BAD_REQUEST;
     FormTooFast => "form.too_fast", BAD_REQUEST;
@@ -57,10 +66,15 @@ codes! {
     LimitPaused => "limit.paused", SERVICE_UNAVAILABLE;
     LimitRateLimited => "limit.rate_limited", TOO_MANY_REQUESTS;
     ReferenceUnavailable => "reference.unavailable", SERVICE_UNAVAILABLE;
+    ReferenceUnknown => "reference.unknown", BAD_REQUEST;
     ServerNotFound => "server.not_found", NOT_FOUND;
     ServerMethodNotAllowed => "server.method_not_allowed", METHOD_NOT_ALLOWED;
     ServerInternal => "server.internal", INTERNAL_SERVER_ERROR;
     ServerUnavailable => "server.unavailable", SERVICE_UNAVAILABLE;
+    SlotCountOutOfRange => "slot.count_out_of_range", BAD_REQUEST;
+    SlotDuplicate => "slot.duplicate", BAD_REQUEST;
+    SlotDurationOutOfRange => "slot.duration_out_of_range", BAD_REQUEST;
+    SlotInPast => "slot.in_past", BAD_REQUEST;
 }
 
 /// Entités admises pour un code (AD-5, plus `server` décidé pour la story 1-5).
@@ -93,21 +107,42 @@ impl std::fmt::Display for Code {
     }
 }
 
-/// Réponse d'erreur `/api/*`. Rien d'autre que le statut et le code : la cause d'une erreur interne
-/// part dans `tracing`, jamais dans le corps.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl From<EventError> for Code {
+    fn from(e: EventError) -> Self {
+        match e {
+            EventError::ReferenceUnknown => Code::ReferenceUnknown,
+            EventError::FactionScopeNotAllowed => Code::EventFactionScopeNotAllowed,
+            EventError::SlotInPast => Code::SlotInPast,
+            EventError::SlotCountOutOfRange => Code::SlotCountOutOfRange,
+            EventError::SlotDuplicate => Code::SlotDuplicate,
+            EventError::SlotDurationOutOfRange => Code::SlotDurationOutOfRange,
+            EventError::NoteInvalid => Code::EventNoteInvalid,
+            EventError::DiscordUrlInvalid => Code::EventDiscordUrlInvalid,
+            EventError::MinCpOutOfRange => Code::EventMinCpOutOfRange,
+            EventError::ClassBoundsInvalid => Code::EventClassBoundsInvalid,
+        }
+    }
+}
+
+/// Réponse d'erreur `/api/*`. Le statut, le code et, pour une erreur de validation, les codes par
+/// champ : la cause d'une erreur interne part dans `tracing`, jamais dans le corps.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Problem {
     pub code: Code,
     retry_after: Option<u64>,
+    /// Chemin JSON camelCase (`slots.2.startsAt`) → code complet ; sérialisé seulement si présent.
+    fields: Option<BTreeMap<String, &'static str>>,
 }
 
 #[derive(Serialize)]
-struct Body {
+struct Body<'a> {
     #[serde(rename = "type")]
     kind: &'static str,
     title: &'static str,
     status: u16,
     code: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fields: Option<&'a BTreeMap<String, &'static str>>,
 }
 
 impl Problem {
@@ -117,7 +152,27 @@ impl Problem {
         let retry_after = (status == StatusCode::SERVICE_UNAVAILABLE
             || status == StatusCode::TOO_MANY_REQUESTS)
             .then_some(DEFAULT_RETRY_AFTER_SECS);
-        Self { code, retry_after }
+        Self {
+            code,
+            retry_after,
+            fields: None,
+        }
+    }
+
+    /// Erreurs de champ : `code` est celui de la première, `fields` les porte toutes. Liste vide =
+    /// erreur interne (aucun appelant ne devrait la produire).
+    pub fn fields(errors: FieldErrors) -> Self {
+        let Some((_, first)) = errors.first() else {
+            return Self::new(Code::ServerInternal);
+        };
+        let mut problem = Self::new(Code::from(*first));
+        let mut fields = BTreeMap::new();
+        for (path, e) in errors {
+            // Un chemin vu deux fois garde sa première erreur.
+            fields.entry(path).or_insert(Code::from(e).as_str());
+        }
+        problem.fields = Some(fields);
+        problem
     }
 
     /// Remplace le délai annoncé (sans effet hors 503 et 429).
@@ -143,8 +198,9 @@ impl IntoResponse for Problem {
             title: status.canonical_reason().unwrap_or(""),
             status: status.as_u16(),
             code: self.code.as_str(),
+            fields: self.fields.as_ref(),
         };
-        // Quatre champs statiques : la sérialisation ne peut pas échouer.
+        // Champs statiques et chaînes : la sérialisation ne peut pas échouer.
         let json = serde_json::to_vec(&body).expect("problem body serializes");
         let mut res = (
             status,
@@ -231,6 +287,7 @@ mod tests {
             let obj = json.as_object().unwrap();
             let mut keys: Vec<_> = obj.keys().map(String::as_str).collect();
             keys.sort_unstable();
+            // Sans erreur de champ, `fields` est absent, jamais vide (AD-5).
             assert_eq!(keys, ["code", "status", "title", "type"], "{code}");
             assert_eq!(json["type"], PROBLEM_TYPE);
             assert_eq!(json["title"], code.status().canonical_reason().unwrap());
@@ -247,6 +304,48 @@ mod tests {
             } else {
                 assert!(retry.is_none(), "{code}");
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn field_errors_carry_every_path_and_the_first_code() {
+        let (res, json) = render(Problem::fields(vec![
+            ("region".into(), EventError::ReferenceUnknown),
+            ("note".into(), EventError::NoteInvalid),
+            ("slots.2.startsAt".into(), EventError::SlotInPast),
+        ]))
+        .await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(res.headers()[CONTENT_TYPE], PROBLEM_JSON);
+        let mut keys: Vec<_> = json.as_object().unwrap().keys().cloned().collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["code", "fields", "status", "title", "type"]);
+        assert_eq!(json["code"], "reference.unknown");
+        assert_eq!(
+            json["fields"],
+            serde_json::json!({
+                "region": "reference.unknown",
+                "note": "event.note_invalid",
+                "slots.2.startsAt": "slot.in_past",
+            })
+        );
+    }
+
+    #[test]
+    fn every_event_error_maps_to_a_bad_request() {
+        for e in [
+            EventError::ReferenceUnknown,
+            EventError::FactionScopeNotAllowed,
+            EventError::SlotInPast,
+            EventError::SlotCountOutOfRange,
+            EventError::SlotDuplicate,
+            EventError::SlotDurationOutOfRange,
+            EventError::NoteInvalid,
+            EventError::DiscordUrlInvalid,
+            EventError::MinCpOutOfRange,
+            EventError::ClassBoundsInvalid,
+        ] {
+            assert_eq!(Code::from(e).status(), StatusCode::BAD_REQUEST, "{e:?}");
         }
     }
 

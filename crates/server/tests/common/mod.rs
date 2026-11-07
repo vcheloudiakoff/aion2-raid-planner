@@ -125,6 +125,33 @@ pub async fn send_bare(
     )
 }
 
+/// POST JSON avec l'IP visiteur de test ; `body` est envoyé tel quel (texte brut, JSON ou non).
+pub async fn post_raw(router: &Router, uri: &str, body: &str) -> (Response<Body>, String) {
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri(uri)
+        .header("content-type", "application/json")
+        .header("x-client-ip", TEST_CLIENT_IP)
+        .body(Body::from(body.to_owned()))
+        .unwrap();
+    let res = router.clone().oneshot(req).await.unwrap();
+    let (parts, body) = res.into_parts();
+    let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+    (
+        Response::from_parts(parts, Body::empty()),
+        String::from_utf8_lossy(&bytes).into_owned(),
+    )
+}
+
+/// POST d'une valeur JSON.
+pub async fn post_json(
+    router: &Router,
+    uri: &str,
+    body: &serde_json::Value,
+) -> (Response<Body>, String) {
+    post_raw(router, uri, &body.to_string()).await
+}
+
 pub fn header<'a>(res: &'a Response<Body>, name: &str) -> &'a str {
     res.headers()
         .get(name)

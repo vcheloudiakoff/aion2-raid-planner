@@ -72,10 +72,41 @@ export interface FormToken {
 }
 
 /** Corps `application/problem+json` de toute erreur `/api/*` (RFC 9457). `title` est le libellé HTTP
- * standard, jamais un texte à afficher : le client traduit `errors.<code>`. */
+ * standard, jamais un texte à afficher : le client traduit `errors.<code>`. `fields`, présent sur une
+ * erreur de validation seulement, associe un chemin JSON camelCase (`slots.2.startsAt`) à son code. */
 export interface Problem {
   type: string;
   title: string;
   status: number;
   code: string;
+  fields?: Record<string, string>;
+}
+
+/** Portée de faction d'un événement. */
+export type FactionScope = "all" | Faction;
+
+export type Visibility = "listed" | "unlisted";
+
+/** Corps de `POST /api/events`, à côté de `formToken` et du honeypot `website`. */
+export interface CreateEvent {
+  instance: string;
+  region: string;
+  factionScope: FactionScope;
+  /** `startsAt` en UTC, forme `YYYY-MM-DDTHH:MM:SSZ` ; `durationMin` absente = durée de l'instance. */
+  slots: { startsAt: string; durationMin?: number }[];
+  note?: string;
+  discordUrl?: string;
+  visibility?: Visibility;
+  minCp?: number;
+  /** `classId → bornes` ; une classe omise prend ses bornes par défaut. */
+  classBounds?: Record<string, { min: number; max: number }>;
+}
+
+/** Réponse 201 de `POST /api/events`, rendue une seule fois. Chemins relatifs, à préfixer par
+ * `location.origin`. */
+export interface CreatedEvent {
+  eventId: string;
+  organizerSecret: string;
+  joinSecret: string;
+  links: { organizer: string; join: string; public: string };
 }

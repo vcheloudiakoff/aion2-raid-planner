@@ -4,6 +4,7 @@ pub mod assets;
 pub mod client_ip;
 pub mod dto;
 pub mod errors;
+pub mod events;
 pub mod form_token;
 pub mod headers;
 pub mod limits;
@@ -19,7 +20,7 @@ use std::net::SocketAddr;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Router, middleware};
 use rust_embed::RustEmbed;
 
@@ -44,10 +45,18 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
             Guard::new(&state.limits, RouteClass::Read),
             limits::enforce,
         ));
+    // Classe `create` : jeton de formulaire et honeypot vérifiés par la commande, quota `RATE_CREATE`.
+    let create = Router::new()
+        .route("/events", post(events::post_event))
+        .route_layer(middleware::from_fn_with_state(
+            Guard::new(&state.limits, RouteClass::Create),
+            limits::enforce,
+        ));
     // Classe `nokey` : ni IP ni limiteur.
     let api = Router::new()
         .route("/health", get(get_health))
         .merge(read)
+        .merge(create)
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_method_not_allowed);
     Router::new()

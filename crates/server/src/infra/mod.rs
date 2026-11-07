@@ -2,6 +2,7 @@
 
 pub mod backup;
 pub mod clock;
+pub mod events;
 pub mod ids;
 pub mod links;
 pub mod reference;

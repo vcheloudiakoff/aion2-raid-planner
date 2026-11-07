@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getConditional, remember } from "./client";
-import type { ReferenceSet } from "./types";
+import type { Label, ReferenceSet } from "./types";
 import { readJson, writeJson } from "../lib/storage";
 
 export const REFERENCE_URL = "/api/reference";
@@ -36,6 +36,11 @@ function isReferenceSet(v: unknown): v is ReferenceSet {
     d.factions !== null &&
     !Array.isArray(d.factions)
   );
+}
+
+/** Libellé de référence dans la langue courante : `fr` avec repli sur `en` (AD-6). */
+export function labelOf(label: Label, lang: string): string {
+  return lang === "fr" ? (label.fr ?? label.en) : label.en;
 }
 
 /** Cache lu et mémoire conditionnelle amorcée ; `null` sans cache valide. */

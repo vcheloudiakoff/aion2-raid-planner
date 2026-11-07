@@ -1,8 +1,12 @@
 //! DTO du contrat HTTP (AD-5) : `camelCase`, un champ absent n'existe pas. Miroir TypeScript dans
 //! `web/src/api/types.ts`, modifié dans le même commit.
 
+use std::collections::BTreeMap;
+
+use domain::Timestamp;
+use domain::event::{self as ev, FactionScope, Visibility};
 use domain::reference as r;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Réponse de `GET /api/form-token` : jeton opaque à renvoyer tel quel dans `formToken`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -198,4 +202,100 @@ impl From<&r::ReferenceSet> for ReferenceSet {
                 .collect(),
         }
     }
+}
+
+/// Corps de `POST /api/events`, à plat dans `FormEnvelope` à côté du jeton et du honeypot. Champs
+/// numériques en `i64` : une valeur hors bornes est une erreur de champ, pas un corps illisible.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateEvent {
+    pub instance: String,
+    pub region: String,
+    pub faction_scope: FactionScope,
+    pub slots: Vec<NewSlot>,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub discord_url: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<Visibility>,
+    #[serde(default)]
+    pub min_cp: Option<i64>,
+    /// `classId → {min, max}` ; une classe omise prend ses bornes par défaut.
+    #[serde(default)]
+    pub class_bounds: Option<BTreeMap<String, NewBound>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewSlot {
+    pub starts_at: Timestamp,
+    /// Absente : durée de l'instance.
+    #[serde(default)]
+    pub duration_min: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewBound {
+    pub min: i64,
+    pub max: i64,
+}
+
+impl From<CreateEvent> for ev::NewEvent {
+    fn from(c: CreateEvent) -> Self {
+        Self {
+            instance: c.instance,
+            region: c.region,
+            faction_scope: c.faction_scope,
+            slots: c
+                .slots
+                .into_iter()
+                .map(|s| ev::NewSlot {
+                    starts_at: s.starts_at,
+                    duration_min: s.duration_min,
+                })
+                .collect(),
+            note: c.note.unwrap_or_default(),
+            discord_url: c.discord_url,
+            visibility: c.visibility.unwrap_or_default(),
+            min_cp: c.min_cp,
+            class_bounds: c
+                .class_bounds
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, b)| {
+                    (
+                        k,
+                        ev::NewBound {
+                            min: b.min,
+                            max: b.max,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Réponse 201 de `POST /api/events`, rendue une seule fois. Liens relatifs : la SPA les préfixe par
+/// son origine. Les secrets bruts sont là pour `links.v1`, qui les garde sur l'appareil.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedEvent {
+    pub event_id: String,
+    pub organizer_secret: String,
+    pub join_secret: String,
+    pub links: CreatedLinks,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedLinks {
+    /// `/o/<secret>`
+    pub organizer: String,
+    /// `/j/<secret>`
+    pub join: String,
+    /// `/e/<eventId>`
+    pub public: String,
 }

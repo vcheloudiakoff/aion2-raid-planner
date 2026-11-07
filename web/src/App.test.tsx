@@ -6,6 +6,7 @@ import { resetClientForTests } from "./api/client";
 import { REFERENCE_CACHE_KEY } from "./api/reference";
 import { resetLangForTests } from "./i18n";
 import { byText, mount, type Mounted } from "./test/dom";
+import { ORGANIZER, reference } from "./test/fixtures";
 
 let m: Mounted | null = null;
 
@@ -34,12 +35,12 @@ function lang(tag: string) {
 }
 
 describe("home", () => {
-  it("renders the empty state at once, before the API answers, without a create button", () => {
+  it("renders the empty state at once, before the API answers, with a create button", () => {
     lang("fr-FR");
     vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
     m = mount(<App />);
     expect(byText(m.container, "Aucun raid ouvert pour l'instant.")).toBeTruthy();
-    expect(m.container.textContent).not.toMatch(/Créer/);
+    expect(byText(m.container, "Créer un raid").getAttribute("href")).toBe("/new");
     expect(m.container.textContent).not.toMatch(/Sur cet appareil/);
   });
 
@@ -125,5 +126,34 @@ describe("home", () => {
     await flush();
     expect(byText(m.container, "New version")).toBeTruthy();
     expect(byText(m.container, "Reload").tagName).toBe("BUTTON");
+  });
+});
+
+describe("routes", () => {
+  afterEach(() => window.history.pushState({}, "", "/"));
+
+  it("serves the create form on /new with game labels from the cached reference", () => {
+    lang("fr-FR");
+    localStorage.setItem(
+      REFERENCE_CACHE_KEY,
+      JSON.stringify({ etag: '"e"', data: reference, fetchedAt: "2026-11-06T20:04:00Z" }),
+    );
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    window.history.pushState({}, "", "/new");
+    m = mount(<App />);
+    expect(byText(m.container, "Créer un raid").tagName).toBe("H1");
+    const options = [...m.container.querySelectorAll("option")].map((o) => o.textContent);
+    expect(options).toEqual(["Instance Une", "Mono", "Région Une"]);
+    expect(m.container.textContent).toContain("Classe Soin");
+  });
+
+  it("serves the pending organizer page on /o/<secret>, secret shown nowhere", () => {
+    lang("fr-FR");
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    window.history.pushState({}, "", `/o/${ORGANIZER}`);
+    m = mount(<App />);
+    expect(byText(m.container, "Ton raid est publié")).toBeTruthy();
+    expect(m.container.textContent).not.toContain(ORGANIZER);
+    expect(document.title).not.toContain(ORGANIZER);
   });
 });

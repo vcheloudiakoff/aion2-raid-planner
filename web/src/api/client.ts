@@ -7,16 +7,19 @@
 import { useSyncExternalStore } from "react";
 import type { Problem } from "./types";
 
-/** Erreur typée : `status` 0 = serveur injoignable ; `code` = code du registre si problem+json. */
+/** Erreur typée : `status` 0 = serveur injoignable ; `code` = code du registre si problem+json ;
+ * `fields` = codes par chemin JSON sur une erreur de validation. */
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
+  readonly fields: Record<string, string>;
 
-  constructor(status: number, code?: string) {
+  constructor(status: number, code?: string, fields: Record<string, string> = {}) {
     super(code ?? (status === 0 ? "unreachable" : `HTTP ${status}`));
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.fields = fields;
   }
 }
 
@@ -74,13 +77,21 @@ export function remember(url: string, etag: string, body: unknown): void {
   memo.set(url, { etag, body });
 }
 
-async function problemCode(res: Response): Promise<string | undefined> {
-  if (!(res.headers.get("Content-Type") ?? "").startsWith("application/problem+json")) return undefined;
+/** Erreur typée d'une réponse non 2xx : code et champs lus si le corps est un problem+json. */
+async function problemError(res: Response): Promise<ApiError> {
+  if (!(res.headers.get("Content-Type") ?? "").startsWith("application/problem+json")) {
+    return new ApiError(res.status);
+  }
   try {
     const p = (await res.json()) as Partial<Problem>;
-    return typeof p.code === "string" ? p.code : undefined;
+    const code = typeof p.code === "string" ? p.code : undefined;
+    const fields: Record<string, string> = {};
+    if (typeof p.fields === "object" && p.fields !== null && !Array.isArray(p.fields)) {
+      for (const [path, c] of Object.entries(p.fields)) if (typeof c === "string") fields[path] = c;
+    }
+    return new ApiError(res.status, code, fields);
   } catch {
-    return undefined;
+    return new ApiError(res.status);
   }
 }
 
@@ -116,7 +127,7 @@ export async function getConditional<T>(url: string, options: RequestOptions = {
     if (!known) throw new ApiError(304);
     return { body: known.body as T, etag: known.etag, notModified: true };
   }
-  if (!res.ok) throw new ApiError(res.status, await problemCode(res));
+  if (!res.ok) throw await problemError(res);
   let body: T;
   try {
     body = (await res.json()) as T;
@@ -132,6 +143,39 @@ export async function getConditional<T>(url: string, options: RequestOptions = {
 
 export async function getJson<T>(url: string, options: RequestOptions = {}): Promise<T> {
   return (await getConditional<T>(url, options)).body;
+}
+
+/** POST JSON d'une commande : aucun conditionnel, aucune mémoire. Le secret de lien éventuel part en
+ * en-tête, jamais dans l'URL ni le corps. */
+export async function postJson<T>(url: string, body: unknown, options: RequestOptions = {}): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json", "Content-Type": "application/json" };
+  const secret = options.linkSecret || undefined;
+  if (secret) headers["X-Link-Secret"] = secret;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch {
+    setStatus({ offline: true });
+    throw new ApiError(0);
+  }
+  noteBuild(res.headers.get("X-App-Build"));
+  if (GATEWAY_DOWN.has(res.status)) {
+    setStatus({ offline: true });
+    throw new ApiError(0);
+  }
+  setStatus({ offline: false });
+  if (!res.ok) throw await problemError(res);
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiError(res.status);
+  }
 }
 
 /** Remise à zéro (tests). */

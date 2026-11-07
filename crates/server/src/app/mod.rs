@@ -1,5 +1,6 @@
 //! Commandes, requêtes et santé. Appelle `infra` directement, sans trait de dépôt.
 
+pub mod commands;
 pub mod health;
 pub mod tasks;
 
