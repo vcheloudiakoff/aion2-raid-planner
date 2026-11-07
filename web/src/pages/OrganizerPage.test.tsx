@@ -260,19 +260,20 @@ describe("rows", () => {
     expect(row(KAEL).querySelector('[data-testid="faction"]')!.textContent).toBe("Élyséens");
 
     const badge = (id: string) => row(id).querySelector<HTMLElement>('[data-testid="status-badge"]');
-    expect(badge(KAEL)).toBeNull();
     expect(row(KAEL).querySelector(".bg-faction-elyos")).not.toBeNull();
     expect(row(KAEL).textContent).toContain("[SE]");
-    expect(badge(NYRA)!.textContent).toBe("En attente");
-    expect(badge(NYRA)!.className).toContain("text-pending");
-    for (const [id, label] of [
-      [TOMA, "Refusée"],
-      [LIO, "Retirée"],
+    // Chaque statut a son badge : couleur doublée du libellé.
+    for (const [id, label, style] of [
+      [KAEL, "Acceptée", "text-available"],
+      [NYRA, "En attente", "text-pending"],
+      [TOMA, "Refusée", "text-danger"],
+      [LIO, "Retirée", "text-ink-disabled"],
     ]) {
       expect(badge(id)!.textContent, id).toBe(label);
-      expect(badge(id)!.className, id).toContain("line-through");
-      expect(badge(id)!.className, id).toContain("text-ink-disabled");
+      expect(badge(id)!.className, id).toContain(style);
     }
+    expect(badge(TOMA)!.className).not.toContain("line-through");
+    expect(badge(LIO)!.className).toContain("line-through");
   });
 
   it("flag duplicates with a danger badge on both lines", async () => {
@@ -383,7 +384,7 @@ describe("sheet", () => {
     expect(post.url).toBe("/api/organizer/candidature-status");
     expect(headerOf(post, "X-Link-Secret")).toBe(ORGANIZER);
     expect(sent(post)).toEqual({ candidatureId: NYRA, status: "accepted" });
-    expect(row(NYRA).querySelector('[data-testid="status-badge"]')).toBeNull();
+    expect(row(NYRA).querySelector('[data-testid="status-badge"]')!.textContent).toBe("Acceptée");
     // La feuille relit sa candidature : statut à jour, « Accepter » parti, focus sur le statut.
     expect(dialog()!.querySelector('[data-testid="sheet-status"]')!.textContent).toBe("doublonAcceptée");
     expect(inDialog("Accepter")).toBeNull();
@@ -689,10 +690,10 @@ describe("refresh", () => {
     await tick();
     click(row(NYRA));
     await press(inDialog("Accepter"));
-    expect(row(NYRA).querySelector('[data-testid="status-badge"]')).toBeNull();
+    expect(row(NYRA).querySelector('[data-testid="status-badge"]')!.textContent).toBe("Acceptée");
     await act(async () => late(json(organizerEvent)));
     await flush();
-    expect(row(NYRA).querySelector('[data-testid="status-badge"]')).toBeNull();
+    expect(row(NYRA).querySelector('[data-testid="status-badge"]')!.textContent).toBe("Acceptée");
     expect(inDialog("Accepter")).toBeNull();
   });
 

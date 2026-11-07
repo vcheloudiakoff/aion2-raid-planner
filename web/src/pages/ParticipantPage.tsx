@@ -21,6 +21,7 @@ import type {
 } from "../api/types";
 import { CandidatureForm } from "../components/CandidatureForm";
 import { ConfirmSheet } from "../components/ConfirmSheet";
+import { STATUS_STYLE } from "../components/CandidatureRow";
 import { CopyChip } from "../components/CopyChip";
 import { DeadLink, GONE, isDeadLinkCode } from "../components/DeadLink";
 import { FactionDot, Summary, roleLabel } from "../components/EventSummary";
@@ -49,13 +50,6 @@ const STATUS_KEY: Record<CandidatureStatus, MessageKey> = {
   withdrawn: "participant.status.withdrawn",
 };
 
-/** Badge de statut (DESIGN.md) : `pending` en bleu, `rejected` et `withdrawn` barrés. */
-const STATUS_STYLE: Record<CandidatureStatus, string> = {
-  pending: "border-pending text-pending",
-  accepted: "border-border text-ink-primary",
-  rejected: "border-border text-ink-disabled line-through",
-  withdrawn: "border-border text-ink-disabled line-through",
-};
 
 const isStatus = (v: unknown): v is CandidatureStatus => typeof v === "string" && v in STATUS_KEY;
 

@@ -155,8 +155,8 @@ describe("read", () => {
   it("labels and styles the four statuses", async () => {
     const expected: [CandidatureStatus, string, string][] = [
       ["pending", "En attente de l'organisateur", "text-pending"],
-      ["accepted", "Acceptée", "text-ink-primary"],
-      ["rejected", "Refusée", "line-through"],
+      ["accepted", "Acceptée", "text-available"],
+      ["rejected", "Refusée", "text-danger"],
       ["withdrawn", "Retirée", "line-through"],
     ];
     for (const [status, label, style] of expected) {
@@ -164,7 +164,7 @@ describe("read", () => {
       await render();
       expect(badge().textContent, status).toBe(label);
       expect(badge().className, status).toContain(style);
-      if (status === "rejected" || status === "withdrawn") expect(badge().className).toContain("text-ink-disabled");
+      if (status === "withdrawn") expect(badge().className).toContain("text-ink-disabled");
       m.unmount();
     }
     m = mount(<div />);

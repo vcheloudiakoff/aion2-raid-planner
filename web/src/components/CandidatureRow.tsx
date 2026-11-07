@@ -1,7 +1,7 @@
 // Ligne de candidature vue par l'organisateur (DESIGN.md *Components*, EXPERIENCE.md *Component
 // Patterns*) : un bouton qui ouvre la feuille de la candidature, jamais une action par balayage.
 // Pseudo, `[SRV]` avec le point de faction, classe, CP aligné à droite en chiffres tabulaires ; badge
-// de statut si la candidature n'est pas `accepted`, badge « doublon » si elle est signalée. Une ligne
+// de statut coloré pour chaque statut, badge « doublon » si elle est signalée. Une ligne
 // nouvelle porte un liseré or ; il s'efface en transition, sauf sous `prefers-reduced-motion`.
 
 import { labelOf } from "../api/reference";
@@ -16,11 +16,12 @@ const STATUS_KEY: Record<CandidatureStatus, MessageKey> = {
   withdrawn: "organizer.status.withdrawn",
 };
 
-/** Badge de statut (DESIGN.md) : `pending` en bleu, `rejected` et `withdrawn` barrés. */
-const STATUS_STYLE: Record<CandidatureStatus, string> = {
-  pending: "border-pending text-pending",
-  accepted: "border-border text-ink-primary",
-  rejected: "border-border text-ink-disabled line-through",
+/** Badge de statut, couleur doublée du libellé (jamais la couleur seule) : `accepted` en vert,
+ * `pending` en bleu, `rejected` en rouge, `withdrawn` barré en `ink-disabled`. Partagé avec `/p`. */
+export const STATUS_STYLE: Record<CandidatureStatus, string> = {
+  pending: "border-pending bg-pending/10 text-pending",
+  accepted: "border-available bg-available/10 text-available",
+  rejected: "border-danger bg-danger/10 text-danger",
   withdrawn: "border-border text-ink-disabled line-through",
 };
 
@@ -91,12 +92,10 @@ export function CandidatureRow({ candidature: c, reference, fresh, onOpen }: Pro
         </span>
         <span className="flex shrink-0 flex-col items-end gap-1">
           <span className="text-label tabular-nums">{new Intl.NumberFormat(lang).format(c.cp)}</span>
-          {(c.duplicate || c.status !== "accepted") && (
-            <span className="flex flex-wrap justify-end gap-1">
-              {c.duplicate && <DuplicateBadge />}
-              {c.status !== "accepted" && <StatusBadge status={c.status} />}
-            </span>
-          )}
+          <span className="flex flex-wrap justify-end gap-1">
+            {c.duplicate && <DuplicateBadge />}
+            <StatusBadge status={c.status} />
+          </span>
         </span>
       </button>
     </li>
