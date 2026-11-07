@@ -447,8 +447,21 @@ pub struct OrganizerEvent {
     pub discord_url: Option<String>,
     /// `classId → {min, max}`, une entrée par classe bornée de l'événement.
     pub class_bounds: BTreeMap<String, ClassBound>,
+    /// Une entrée par créneau, dans l'ordre de `event.slots` : disponibles parmi les `accepted`.
+    pub slots: Vec<OrganizerSlot>,
     /// Ordre de création (`created_at` puis `id`), jamais réordonnées.
     pub candidatures: Vec<OrganizerCandidature>,
+}
+
+/// Couverture d'un créneau par les candidatures `accepted` (jamais `pending`, `rejected` ni
+/// `withdrawn`) : leur nombre, et leur nombre par classe. `coverage` a une entrée par classe bornée
+/// (zéros compris), plus toute classe `accepted` sans borne.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrganizerSlot {
+    pub slot_id: String,
+    pub available_accepted: u32,
+    pub coverage: BTreeMap<String, u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

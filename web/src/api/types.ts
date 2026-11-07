@@ -214,8 +214,19 @@ export interface OrganizerEvent {
   discordUrl?: string;
   /** `classId → bornes`, une entrée par classe bornée de l'événement. */
   classBounds: Record<string, { min: number; max: number }>;
+  /** Une entrée par créneau, dans l'ordre de `event.slots`. */
+  slots: OrganizerSlot[];
   /** Ordre de création, jamais réordonnées. */
   candidatures: OrganizerCandidature[];
+}
+
+/** Couverture d'un créneau, calculée par le serveur sur les seules candidatures `accepted` (jamais
+ * `pending`, `rejected` ni `withdrawn`). `coverage` : `classId → n`, une entrée par classe bornée
+ * (zéros compris), plus toute classe `accepted` sans borne. */
+export interface OrganizerSlot {
+  slotId: string;
+  availableAccepted: number;
+  coverage: Record<string, number>;
 }
 
 /** Statut que l'organisateur peut demander. */

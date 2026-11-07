@@ -151,6 +151,12 @@ export const organizerEvent: OrganizerEvent = {
   event: publicEvent,
   discordUrl: "https://discord.gg/abcdef",
   classBounds: { c1: { min: 1, max: 3 }, c2: { min: 1, max: 10 } },
+  // Comptes des seules `accepted` : Kael (c2, A et B) et nyra (c1, B).
+  slots: [
+    { slotId: "slot_past", availableAccepted: 0, coverage: { c1: 0, c2: 0 } },
+    { slotId: "slot_a", availableAccepted: 1, coverage: { c1: 0, c2: 1 } },
+    { slotId: "slot_b", availableAccepted: 2, coverage: { c1: 1, c2: 1 } },
+  ],
   candidatures: [
     candidature({
       id: NYRA,

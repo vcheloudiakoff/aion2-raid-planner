@@ -81,7 +81,7 @@ async function render() {
     </MemoryRouter>,
   );
   await flush();
-  click(m.container.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]);
+  click(m.container.querySelectorAll<HTMLButtonElement>('[role="tab"]')[2]);
 }
 
 const q = <T extends Element>(sel: string) => m.container.querySelector<T>(sel);

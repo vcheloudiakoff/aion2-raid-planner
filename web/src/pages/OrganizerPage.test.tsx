@@ -133,42 +133,62 @@ describe("page", () => {
     expect(document.title).not.toContain(ORGANIZER);
   });
 
-  it("follows the tablist pattern, Candidatures selected first", async () => {
+  it("follows the tablist pattern with three tabs, Candidatures selected first", async () => {
     serve(() => json(organizerEvent));
     await render();
     const list = q('[role="tablist"]')!;
     expect(list.className).toContain("sticky");
     expect(tabs().map((t) => [t.textContent, t.getAttribute("aria-selected"), t.tabIndex])).toEqual([
       ["Candidatures", "true", 0],
+      ["Disponibilités", "false", -1],
       ["Réglages", "false", -1],
     ]);
+    // À 320 px, un libellé passe sur deux lignes plutôt que de déborder.
+    for (const tab of tabs()) {
+      expect(tab.className).toContain("min-w-0");
+      expect(tab.className).toContain("[overflow-wrap:anywhere]");
+      expect(tab.className).not.toContain("flex-1");
+    }
     const panel = q('[role="tabpanel"]')!;
     expect(panel.getAttribute("aria-labelledby")).toBe(tabs()[0].id);
     expect(tabs()[0].getAttribute("aria-controls")).toBe(panel.id);
-    // L'onglet inactif ne pointe vers aucun panneau absent.
+    // Les onglets inactifs ne pointent vers aucun panneau absent.
     expect(tabs()[1].hasAttribute("aria-controls")).toBe(false);
+    expect(tabs()[2].hasAttribute("aria-controls")).toBe(false);
     expect(m.container.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
 
     click(tabs()[1]);
     expect(tabs()[1].getAttribute("aria-selected")).toBe("true");
     expect(q('[data-testid="candidatures"]')).toBeNull();
+    expect(q('[data-testid="availability"]')).toBeTruthy();
+
+    click(tabs()[2]);
+    expect(tabs()[2].getAttribute("aria-selected")).toBe("true");
+    expect(q('[data-testid="availability"]')).toBeNull();
     // Réglages : le formulaire de l'onglet (détaillé dans `EventSettings.test.tsx`).
     expect(q('[data-testid="settings"] button[type="submit"]')!.textContent).toBe("Enregistrer");
 
-    // Flèches : la sélection suit le focus.
-    key(tabs()[1], "ArrowRight");
+    // Flèches : la sélection suit le focus, et boucle.
+    key(tabs()[2], "ArrowRight");
     expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(tabs()[0]);
-    key(tabs()[0], "ArrowLeft");
+    key(tabs()[0], "ArrowRight");
     expect(tabs()[1].getAttribute("aria-selected")).toBe("true");
-    key(tabs()[1], "Home");
+    expect(document.activeElement).toBe(tabs()[1]);
+    key(tabs()[1], "ArrowLeft");
     expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
+    key(tabs()[0], "ArrowLeft");
+    expect(tabs()[2].getAttribute("aria-selected")).toBe("true");
+    key(tabs()[2], "Home");
+    expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
+    key(tabs()[0], "End");
+    expect(tabs()[2].getAttribute("aria-selected")).toBe("true");
   });
 
   it("cancelled: Réglages is read-only, with the summary and the Discord link or its absence", async () => {
     serve(() => json(viewWith({}, { status: "cancelled" })));
     await render();
-    click(tabs()[1]);
+    click(tabs()[2]);
     const settings = q<HTMLElement>('[data-testid="settings"]')!;
     expect(settings.querySelector('[data-testid="summary"] h2')!.textContent).toBe("Instance Une · mer. 9 janv. 2030");
     const discord = byText(settings, "https://discord.gg/abcdef") as HTMLAnchorElement;
@@ -181,7 +201,7 @@ describe("page", () => {
 
     serve(() => json(viewWith({}, { status: "cancelled" }, { discordUrl: undefined })));
     await render();
-    click(tabs()[1]);
+    click(tabs()[2]);
     expect(q('[data-testid="settings"]')!.textContent).toContain("Aucun lien Discord.");
   });
 
@@ -549,7 +569,7 @@ describe("sheet", () => {
       ),
     );
     await render();
-    click(tabs()[1]);
+    click(tabs()[2]);
     fill(q<HTMLTextAreaElement>('[data-testid="settings"] textarea')!, "Go");
     await press(q<HTMLButtonElement>('[data-testid="settings"] button[type="submit"]'));
     click(tabs()[0]);
@@ -773,6 +793,141 @@ describe("refresh", () => {
   });
 });
 
+describe("availability tab", () => {
+  /** Écran assez large pour la matrice. */
+  function wide() {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({
+          matches: query === "(min-width: 22.5em)",
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        }) as unknown as MediaQueryList,
+    );
+  }
+  const gridRows = () =>
+    [...m.container.querySelectorAll<HTMLElement>('[data-testid^="grid-row-"]')].map((r) => r.dataset.testid!.slice(9));
+  const gridButton = (id: string) => q<HTMLButtonElement>(`[data-testid="grid-row-${id}"] th button`)!;
+
+  it("opens the candidature sheet from a matrix row, and focus comes back to it", async () => {
+    wide();
+    serve(() => json(organizerEvent));
+    await render();
+    click(tabs()[1]);
+    expect(gridRows()).toEqual([KAEL, NYRA_TWIN, NYRA]);
+    gridButton(NYRA).focus();
+    click(gridButton(NYRA));
+    expect(dialogs()).toHaveLength(1);
+    expect(dialog()!.querySelector("h2")!.textContent).toBe("Nyra");
+    expect(inDialog("Accepter")).toBeTruthy();
+    click(inDialog("Fermer")!);
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(gridButton(NYRA));
+  });
+
+  it("keeps the view, the filter and the picked slot across a tab switch", async () => {
+    wide();
+    serve(() => json(organizerEvent));
+    await render();
+    click(tabs()[1]);
+    click(q('[data-testid="col-slot_b"]')!);
+    click(q('[data-testid="filter-pending"]')!);
+    click(q('[data-testid="view-slot"]')!);
+    click(tabs()[0]);
+    click(tabs()[1]);
+    expect(q('[data-testid="view-slot"]')!.getAttribute("aria-pressed")).toBe("true");
+    expect(q('[data-testid="filter-pending"]')!.getAttribute("aria-pressed")).toBe("true");
+    expect(q('[data-testid="chip-slot_b"]')!.getAttribute("aria-pressed")).toBe("true");
+    click(tabs()[2]);
+    click(tabs()[1]);
+    click(q('[data-testid="view-matrix"]')!);
+    expect(q('[data-testid="col-slot_b"]')!.getAttribute("aria-pressed")).toBe("true");
+    expect(gridRows()).toEqual([NYRA]);
+  });
+
+  it("returns focus to the panel heading when the row behind the sheet leaves the grid", async () => {
+    wide();
+    serve(
+      () => json(organizerEvent),
+      () => json(viewWith({ [NYRA]: { status: "accepted" } })),
+    );
+    await render();
+    click(tabs()[1]);
+    click(q('[data-testid="filter-pending"]')!);
+    click(gridButton(NYRA));
+    await press(inDialog("Accepter"));
+    // Acceptée : elle sort du filtre « En attente ».
+    expect(q(`[data-testid="grid-row-${NYRA}"]`)).toBeNull();
+    click(inDialog("Fermer")!);
+    expect(dialog()).toBeNull();
+    const h2 = q<HTMLHeadingElement>('[data-testid="availability"] h2')!;
+    expect(h2.textContent).toBe("Disponibilités");
+    expect(document.activeElement).toBe(h2);
+  });
+
+  it("is read-only on a locked or cancelled raid: no field, no lock button", async () => {
+    wide();
+    for (const status of ["locked", "cancelled"] as const) {
+      serve(() => json(viewWith({}, { status })));
+      await render();
+      click(tabs()[1]);
+      const panel = q<HTMLElement>('[data-testid="availability"]')!;
+      expect(gridRows()).toEqual([KAEL, NYRA_TWIN, NYRA]);
+      expect(panel.querySelectorAll("input, select, textarea, form")).toHaveLength(0);
+      const labels = [...panel.querySelectorAll("button")].map((b) => b.textContent ?? "");
+      expect(labels.some((l) => /Verrouiller|Accepter|Refuser|Enregistrer/.test(l)), status).toBe(false);
+      expect(panel.querySelectorAll("td button")).toHaveLength(0);
+      m.unmount();
+    }
+    serve(() => json(organizerEvent));
+    await render();
+  });
+
+  it("a refresh that changes a status never moves the other rows; a new row comes last with the gold edge", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    wide();
+    let current = organizerEvent;
+    serve(() => json(current));
+    await render();
+    click(tabs()[1]);
+    expect(gridRows()).toEqual([KAEL, NYRA_TWIN, NYRA]);
+
+    const NEW = "Z".repeat(21) + "9";
+    current = viewWith(
+      { [NYRA]: { status: "accepted", availabilities: [{ slotId: "slot_a", preferred: true }, { slotId: "slot_b", preferred: false }] } },
+      {},
+      {
+        candidatures: [
+          ...organizerEvent.candidatures,
+          { ...organizerEvent.candidatures[1], id: NEW, pseudo: "Zed", pseudoSrv: "Zed[SE]", status: "pending" },
+        ],
+      },
+    );
+    await tick();
+    // Nyra, acceptée et cochée partout, serait triée en tête : elle reste à sa place.
+    expect(gridRows()).toEqual([KAEL, NYRA_TWIN, NYRA, NEW]);
+    expect(q(`[data-testid="grid-row-${NYRA}"] [data-testid="pending-badge"]`)).toBeNull();
+    expect(q<HTMLElement>(`[data-testid="grid-row-${NEW}"]`)!.dataset.fresh).toBe("true");
+    expect(gridButton(NEW).className).toContain("border-l-accent");
+    await act(async () => {
+      vi.advanceTimersByTime(FRESH_MS);
+    });
+    expect(gridButton(NEW).className).toContain("border-l-transparent");
+
+    // Une ligne refusée au rafraîchissement sort de la grille, les autres ne bougent pas.
+    current = viewWith({ [NYRA_TWIN]: { status: "rejected" } }, {}, { candidatures: current.candidatures });
+    await tick();
+    expect(gridRows()).toEqual([KAEL, NYRA, NEW]);
+
+    // Rouvrir l'onglet retrie.
+    click(tabs()[0]);
+    click(tabs()[1]);
+    expect(gridRows()).toEqual([NYRA, KAEL, NEW]);
+  });
+});
+
 describe("local links", () => {
   it("saves the organizer link after the first read and keeps an existing direct link", async () => {
     localStorage.setItem(LINKS_KEY, JSON.stringify({ [EVENT_ID]: { join: JOIN, participants: {} } }));
@@ -791,7 +946,7 @@ describe("local links", () => {
     // Visible quel que soit l'onglet.
     const warning = "Ce navigateur ne gardera pas ce lien : copie-le maintenant, depuis l'onglet Réglages.";
     expect(q('[role="alert"]')!.textContent).toBe(warning);
-    click(tabs()[1]);
+    click(tabs()[2]);
     expect(q('[role="alert"]')!.textContent).toBe(warning);
     expect(q('[data-testid="my-link"]')).not.toBeNull();
   });
@@ -803,7 +958,7 @@ describe("local links", () => {
     await render();
     expect(q('[data-testid="my-link"]')).toBeNull();
     expect(m.container.textContent).not.toContain(ORGANIZER);
-    click(tabs()[1]);
+    click(tabs()[2]);
     const block = q<HTMLElement>('[data-testid="my-link"]')!;
     expect(block.compareDocumentPosition(q('[data-testid="settings"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(block.querySelector("h2")!.textContent).toBe("Ton lien d'organisateur");
@@ -822,7 +977,7 @@ describe("local links", () => {
     localStorage.setItem(LINKS_KEY, JSON.stringify({ [EVENT_ID]: { organizer: ORGANIZER, join: JOIN, participants: {} } }));
     serve(() => json(organizerEvent));
     await render();
-    click(tabs()[1]);
+    click(tabs()[2]);
     expect(q('[data-testid="public-link"] button')!.textContent).toBe(`${window.location.origin}/e/${EVENT_ID}`);
     expect(q('[data-testid="join-link"] button')!.textContent).toBe(`${window.location.origin}/j/${JOIN}`);
   });
@@ -831,7 +986,7 @@ describe("local links", () => {
     localStorage.removeItem(LINKS_KEY);
     serve(() => json(organizerEvent));
     await render();
-    click(tabs()[1]);
+    click(tabs()[2]);
     expect(q('[data-testid="public-link"] button')!.textContent).toBe(`${window.location.origin}/e/${EVENT_ID}`);
     expect(q('[data-testid="join-link"] button')).toBeNull();
     expect(q('[data-testid="join-link"]')!.textContent).toContain(
@@ -842,7 +997,7 @@ describe("local links", () => {
   it("offers the link on a cancelled raid too", async () => {
     serve(() => json(viewWith({}, { status: "cancelled" })));
     await render();
-    click(tabs()[1]);
+    click(tabs()[2]);
     expect(q('[data-testid="my-link"] button')!.textContent).toBe(`${window.location.origin}/o/${ORGANIZER}`);
   });
 });

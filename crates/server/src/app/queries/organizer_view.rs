@@ -1,16 +1,19 @@
 //! `organizer_view` (CAP-5) : l'événement vu par son lien organisateur `/o/`. Le `PublicEvent`, le
 //! lien Discord, les bornes par classe et toutes les candidatures, dans l'ordre de création, avec
 //! `Pseudo[SRV]` composé ici et les doublons signalés (AD-4 *Données exposées*, AD-6). Rien n'est
-//! dédoublonné ni réordonné.
+//! dédoublonné ni réordonné. Par créneau, les disponibles parmi les `accepted` et leur couverture
+//! par classe (`domain::counts::slot_coverage`).
 
-use domain::counts::role_of;
+use domain::counts::{CoverageInput, role_of, slot_coverage};
 use domain::pseudo_srv::{duplicates, pseudo_srv};
 use domain::reference::ReferenceSet;
 use sqlx::SqliteConnection;
 
 use crate::app::AppState;
 use crate::app::queries::public_event;
-use crate::http::dto::{Availability, ClassBound, OrganizerCandidature, OrganizerEvent};
+use crate::http::dto::{
+    Availability, ClassBound, OrganizerCandidature, OrganizerEvent, OrganizerSlot,
+};
 use crate::http::errors::{Code, Problem};
 use crate::infra::{candidatures, events};
 
@@ -57,6 +60,36 @@ pub async fn load(
         .map(|c| (c.pseudo.as_str(), c.server.as_str(), c.status))
         .collect();
     let flags = duplicates(&keys);
+    let slots = {
+        let checked: Vec<Vec<&str>> = rows
+            .iter()
+            .map(|c| {
+                c.availabilities
+                    .iter()
+                    .map(|a| a.slot_id.as_str())
+                    .collect()
+            })
+            .collect();
+        let inputs: Vec<CoverageInput<'_>> = rows
+            .iter()
+            .zip(&checked)
+            .map(|(c, slot_ids)| CoverageInput {
+                status: c.status,
+                class: &c.class,
+                slot_ids,
+            })
+            .collect();
+        let slot_ids: Vec<&str> = snapshot.slots.iter().map(|s| s.id.as_str()).collect();
+        let bounded: Vec<&str> = snapshot.bounds.iter().map(|b| b.class.as_str()).collect();
+        slot_coverage(&slot_ids, &bounded, &inputs)
+            .into_iter()
+            .map(|s| OrganizerSlot {
+                slot_id: s.slot_id,
+                available_accepted: s.available_accepted,
+                coverage: s.coverage,
+            })
+            .collect()
+    };
     let candidatures = rows
         .into_iter()
         .zip(flags)
@@ -98,6 +131,7 @@ pub async fn load(
         event: public_event::build(reference, snapshot),
         discord_url,
         class_bounds,
+        slots,
         candidatures,
     }))
 }

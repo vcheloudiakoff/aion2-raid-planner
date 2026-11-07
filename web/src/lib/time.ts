@@ -32,10 +32,17 @@ function parts(iso: string, lang: string, options: Intl.DateTimeFormatOptions): 
   return out;
 }
 
+/** Jour court et heure locale d'un instant UTC, séparés : `{day: "mar.", time: "21:00"}`. Pour un
+ * en-tête sur deux lignes. */
+export function slotParts(iso: string, lang: string): { day: string; time: string } {
+  const p = parts(iso, lang, { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return { day: p.weekday, time: `${p.hour}:${p.minute}` };
+}
+
 /** Jour court et heure locale d'un instant UTC : « mar. 21:00 », « Tue 21:00 ». */
 export function formatSlot(iso: string, lang: string): string {
-  const p = parts(iso, lang, { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  return `${p.weekday} ${p.hour}:${p.minute}`;
+  const { day, time } = slotParts(iso, lang);
+  return `${day} ${time}`;
 }
 
 /** Jour court et date locale d'un instant UTC : « mar. 11 nov. », « Tue, Nov 11 ». L'année s'ajoute

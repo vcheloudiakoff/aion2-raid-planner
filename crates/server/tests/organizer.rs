@@ -149,7 +149,13 @@ async fn read_lists_every_candidature_in_creation_order_with_pseudo_srv() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         sorted_keys(&v),
-        ["candidatures", "classBounds", "discordUrl", "event"]
+        [
+            "candidatures",
+            "classBounds",
+            "discordUrl",
+            "event",
+            "slots"
+        ]
     );
     assert_eq!(v["discordUrl"], "https://discord.gg/abcdef");
     assert_eq!(ids(&v), [c.id.clone(), tie[0].clone(), tie[1].clone()]);
@@ -386,6 +392,99 @@ async fn accepted_and_rejected_toggle_both_ways_in_open_or_locked() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn slots_count_only_accepted_availabilities_with_coverage_per_class() {
+    let (state, router) = setup("coverage").await;
+    let e = create(&state, &router, "all").await;
+    let only_a = |class: &str| {
+        json!({
+            "class": class,
+            "availabilities": [{ "slotId": e.slots[0], "preferred": false }],
+        })
+    };
+    // Créneau A : 2 `accepted` (Clerc, Templier), 1 `pending`, 1 `rejected`, 1 `withdrawn`.
+    let mut cleric = only_a("cleric");
+    cleric["pseudo"] = json!("Nyraelle");
+    candidate_with(&state, &router, &e, cleric, true).await;
+    let mut templar = only_a("templar");
+    templar["pseudo"] = json!("Kaelthorn");
+    candidate_with(&state, &router, &e, templar, true).await;
+    let mut pending = only_a("gladiator");
+    pending["pseudo"] = json!("Orvanne");
+    candidate_with(&state, &router, &e, pending, false).await;
+    let mut rejected = only_a("gladiator");
+    rejected["pseudo"] = json!("Faelinor");
+    let r = candidate_with(&state, &router, &e, rejected, false).await;
+    set_status(&state, &r, "rejected").await;
+    let mut withdrawn = only_a("assassin");
+    withdrawn["pseudo"] = json!("Sennaval");
+    let w = candidate_with(&state, &router, &e, withdrawn, true).await;
+    set_status(&state, &w, "withdrawn").await;
+
+    let (status, v, body) = read(&router, &e).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let slots = v["slots"].as_array().unwrap();
+    let ids: Vec<_> = v["event"]["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].clone())
+        .collect();
+    assert_eq!(
+        slots
+            .iter()
+            .map(|s| s["slotId"].clone())
+            .collect::<Vec<_>>(),
+        ids
+    );
+    let a = &slots[0];
+    assert_eq!(sorted_keys(a), ["availableAccepted", "coverage", "slotId"]);
+    assert_eq!(a["slotId"], e.slots[0]);
+    assert_eq!(a["availableAccepted"], 2);
+    let coverage = a["coverage"].as_object().unwrap();
+    // Une entrée par classe bornée, zéros compris.
+    let bounds = v["classBounds"].as_object().unwrap();
+    assert_eq!(
+        coverage.keys().collect::<Vec<_>>(),
+        bounds.keys().collect::<Vec<_>>()
+    );
+    for (class, n) in coverage {
+        let want = u64::from(class == "cleric" || class == "templar");
+        assert_eq!(n.as_u64(), Some(want), "{class}");
+    }
+    assert_eq!(slots[1]["availableAccepted"], 0);
+    assert!(
+        slots[1]["coverage"]
+            .as_object()
+            .unwrap()
+            .values()
+            .all(|n| n == 0)
+    );
+    // `PublicEvent` ne change pas.
+    for slot in v["event"]["slots"].as_array().unwrap() {
+        assert_eq!(sorted_keys(slot), ["durationMin", "id", "startsAt"]);
+    }
+
+    // Une classe `accepted` sans borne garde sa ligne, et la vue d'une commande porte les mêmes
+    // comptes.
+    sql(
+        &state,
+        "DELETE FROM class_bounds WHERE event_id = ? AND class = 'templar'",
+        &[&e.id],
+    )
+    .await;
+    let (status, v, body) = read(&router, &e).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(v["classBounds"].get("templar").is_none());
+    assert_eq!(v["slots"][0]["coverage"]["templar"], 1);
+    assert_eq!(v["slots"][1]["coverage"]["templar"], 0);
+    let (res, text) = decide(&router, &e, &r.id, "accepted").await;
+    assert_eq!(res.status(), StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["slots"][0]["availableAccepted"], 3);
+    assert_eq!(v["slots"][0]["coverage"]["gladiator"], 1);
 }
 
 #[tokio::test]

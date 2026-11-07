@@ -2,7 +2,7 @@
 process.env.TZ = "Asia/Tokyo";
 
 import { describe, expect, it } from "vitest";
-import { formatDay, formatSlot, localInputToUtc, timeZoneLabel } from "./time";
+import { formatDay, formatSlot, localInputToUtc, slotParts, timeZoneLabel } from "./time";
 
 describe("localInputToUtc", () => {
   it("converts browser local time to canonical UTC", () => {
@@ -36,5 +36,13 @@ describe("formatSlot and formatDay", () => {
     const now = new Date("2026-06-01T00:00:00Z");
     expect(formatDay("2026-11-10T12:00:00Z", "fr", now)).toBe("mar. 10 nov.");
     expect(formatDay("2027-01-05T12:00:00Z", "fr", now)).toBe("mar. 5 janv. 2027");
+  });
+});
+
+describe("slotParts", () => {
+  it("splits the short day from the local time, for a two-line header", () => {
+    expect(slotParts("2026-11-10T12:00:00Z", "fr")).toEqual({ day: "mar.", time: "21:00" });
+    expect(slotParts("2026-11-10T12:00:00Z", "en")).toEqual({ day: "Tue", time: "21:00" });
+    expect(slotParts("2026-11-10T20:00:00Z", "fr")).toEqual({ day: "mer.", time: "05:00" });
   });
 });

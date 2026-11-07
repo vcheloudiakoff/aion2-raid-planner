@@ -6,9 +6,13 @@
 //! plus compte sous son propre id (repli d'AD-6). Le manque d'un rôle est la somme des `min_count`
 //! des classes de ce rôle, moins les candidatures comptées de ce rôle ; seuls les manques strictement
 //! positifs sont rendus, triés par id de rôle.
+//!
+//! [`slot_coverage`] sert l'organisateur (grille des disponibilités, verrouillage, composition) :
+//! par créneau, les seules candidatures `accepted` qui l'ont coché, au total et par classe.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::candidature::CandidatureStatus;
 use crate::reference::ReferenceSet;
 
 /// Borne minimale d'une classe dans l'événement (ligne `class_bounds`).
@@ -80,6 +84,62 @@ pub fn public_counts(
         by_role,
         missing_roles,
     }
+}
+
+/// Une candidature vue par [`slot_coverage`] : son statut, sa classe et les ids des créneaux cochés.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoverageInput<'a> {
+    pub status: CandidatureStatus,
+    pub class: &'a str,
+    pub slot_ids: &'a [&'a str],
+}
+
+/// Couverture d'un créneau par les candidatures `accepted`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotCoverage {
+    pub slot_id: String,
+    /// Candidatures `accepted` qui ont coché ce créneau.
+    pub available_accepted: u32,
+    /// Les mêmes, par classe : une entrée par classe bornée (zéros compris), plus toute classe
+    /// d'une candidature `accepted` sans borne (zéro compris, pour que chaque créneau ait les mêmes
+    /// lignes).
+    pub coverage: BTreeMap<String, u32>,
+}
+
+/// Une entrée par créneau de `slots`, dans cet ordre. `bounds` : les classes bornées de
+/// l'événement. Seules les candidatures `accepted` comptent ; `pending`, `rejected` et `withdrawn`
+/// jamais. Un id de créneau coché qui n'est pas dans `slots` est ignoré.
+pub fn slot_coverage(
+    slots: &[&str],
+    bounds: &[&str],
+    candidatures: &[CoverageInput<'_>],
+) -> Vec<SlotCoverage> {
+    let accepted: Vec<&CoverageInput<'_>> = candidatures
+        .iter()
+        .filter(|c| c.status == CandidatureStatus::Accepted)
+        .collect();
+    let classes: BTreeSet<&str> = bounds
+        .iter()
+        .copied()
+        .chain(accepted.iter().map(|c| c.class))
+        .collect();
+    slots
+        .iter()
+        .map(|&slot| {
+            let mut coverage: BTreeMap<String, u32> =
+                classes.iter().map(|&c| (c.to_owned(), 0)).collect();
+            let mut available_accepted = 0;
+            for c in accepted.iter().filter(|c| c.slot_ids.contains(&slot)) {
+                available_accepted += 1;
+                *coverage.entry(c.class.to_owned()).or_default() += 1;
+            }
+            SlotCoverage {
+                slot_id: slot.to_owned(),
+                available_accepted,
+                coverage,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -219,5 +279,101 @@ mod tests {
         assert!(c.missing_roles.is_empty());
         assert_eq!(role_of(&reference(), "bard"), "bard");
         assert_eq!(role_of(&reference(), "cleric"), "healer");
+    }
+
+    fn input<'a>(
+        status: CandidatureStatus,
+        class: &'a str,
+        slot_ids: &'a [&'a str],
+    ) -> CoverageInput<'a> {
+        CoverageInput {
+            status,
+            class,
+            slot_ids,
+        }
+    }
+
+    #[test]
+    fn coverage_counts_only_accepted_per_slot_and_class() {
+        use CandidatureStatus::*;
+        let c = slot_coverage(
+            &["a", "b"],
+            &["cleric", "gladiator", "templar"],
+            &[
+                input(Accepted, "cleric", &["a"]),
+                input(Accepted, "templar", &["a", "b"]),
+                input(Pending, "cleric", &["a", "b"]),
+                input(Rejected, "gladiator", &["a"]),
+                input(Withdrawn, "gladiator", &["a", "b"]),
+            ],
+        );
+        assert_eq!(
+            c,
+            vec![
+                SlotCoverage {
+                    slot_id: "a".into(),
+                    available_accepted: 2,
+                    coverage: BTreeMap::from([
+                        ("cleric".into(), 1),
+                        ("gladiator".into(), 0),
+                        ("templar".into(), 1),
+                    ]),
+                },
+                SlotCoverage {
+                    slot_id: "b".into(),
+                    available_accepted: 1,
+                    coverage: BTreeMap::from([
+                        ("cleric".into(), 0),
+                        ("gladiator".into(), 0),
+                        ("templar".into(), 1),
+                    ]),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn coverage_adds_an_unbounded_accepted_class_but_never_an_excluded_one() {
+        use CandidatureStatus::*;
+        let c = slot_coverage(
+            &["a", "b"],
+            &["cleric"],
+            &[
+                input(Accepted, "bard", &["a"]),
+                input(Pending, "ghost", &["a"]),
+                input(Rejected, "ghost", &["a"]),
+            ],
+        );
+        assert_eq!(
+            c[0].coverage,
+            BTreeMap::from([("bard".into(), 1), ("cleric".into(), 0)])
+        );
+        // Même lignes sur un créneau où la classe sans borne n'est pas disponible.
+        assert_eq!(
+            c[1].coverage,
+            BTreeMap::from([("bard".into(), 0), ("cleric".into(), 0)])
+        );
+        assert_eq!(c[1].available_accepted, 0);
+    }
+
+    #[test]
+    fn coverage_of_a_slot_nobody_checked_is_all_zeros_in_slot_order() {
+        use CandidatureStatus::*;
+        let c = slot_coverage(
+            &["late", "early"],
+            &["templar", "cleric"],
+            &[input(Accepted, "cleric", &["early", "unknown"])],
+        );
+        assert_eq!(
+            c.iter().map(|s| s.slot_id.as_str()).collect::<Vec<_>>(),
+            ["late", "early"]
+        );
+        assert_eq!(c[0].available_accepted, 0);
+        assert_eq!(
+            c[0].coverage,
+            BTreeMap::from([("cleric".into(), 0), ("templar".into(), 0)])
+        );
+        assert_eq!(c[1].available_accepted, 1);
+        assert!(slot_coverage(&[], &["cleric"], &[]).is_empty());
     }
 }

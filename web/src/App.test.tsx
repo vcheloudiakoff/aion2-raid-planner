@@ -313,7 +313,7 @@ describe("on this device", () => {
     window.history.pushState({}, "", `/o/${ORGANIZER}`);
     m = mount(<App />);
     await flush();
-    click(m.container.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]);
+    click(m.container.querySelectorAll<HTMLButtonElement>('[role="tab"]')[2]);
     click(byText(m.container, "Dupliquer"));
     await flush();
     expect(window.location.pathname).toBe("/new");

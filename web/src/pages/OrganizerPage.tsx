@@ -1,11 +1,13 @@
 // Page organisateur `/o/<secret>` (CAP-5, CAP-6, EXPERIENCE.md *Information Architecture*, *State
 // Patterns*, *Liens et appareils*) : titre instance + date, barre d'onglets fixe Candidatures ·
-// Réglages. Candidatures liste toutes les candidatures dans l'ordre de création, chaque ligne ouvre
-// sa feuille (accepter, refuser, copier `Pseudo[SRV]`). Réglages commence par « Ton lien
-// d'organisateur » à copier pour changer d'appareil, puis `EventSettings` règle l'événement, ses
-// créneaux et son annulation et propose « Dupliquer » ; raid annulé, l'onglet est en lecture seule.
-// Le lien est gardé sur cet appareil à la première lecture ; si le navigateur ne peut pas le garder,
-// la page le dit quel que soit l'onglet, en renvoyant à Réglages pour le copier. Relecture silencieuse toutes les 10 s, feuille ouverte
+// Disponibilités · Réglages. Candidatures liste toutes les candidatures dans l'ordre de création,
+// chaque ligne ouvre sa feuille (accepter, refuser, copier `Pseudo[SRV]`). Disponibilités montre la
+// grille joueurs × créneaux (`AvailabilityGrid`), nourrie par la même relecture, dont les lignes
+// ouvrent la même feuille. Réglages commence par « Ton lien d'organisateur » à copier pour changer
+// d'appareil, puis `EventSettings` règle l'événement, ses créneaux et son annulation et propose
+// « Dupliquer » ; raid annulé, l'onglet est en lecture seule. Le lien est gardé sur cet appareil à la
+// première lecture ; si le navigateur ne peut pas le garder, la page le dit quel que soit l'onglet, en
+// renvoyant à Réglages pour le copier. Relecture silencieuse toutes les 10 s, feuille ouverte
 // comprise, arrêtée sur un lien mort (qui oublie son secret sur cet appareil) ou un raid annulé ; une
 // ligne apparue au rafraîchissement porte un liseré or 3 s. Toutes les commandes passent par
 // `command` : une seule à la fois, la relecture l'attend, sa vue s'applique dans l'ordre des
@@ -25,6 +27,7 @@ import {
   updateEventSettings,
 } from "../api/organizer";
 import type { Decision, OrganizerEvent, ReferenceSet } from "../api/types";
+import { AvailabilityGrid, INITIAL_GRID_CHOICE, type GridChoice } from "../components/AvailabilityGrid";
 import { CandidatureRow } from "../components/CandidatureRow";
 import { CandidatureSheet } from "../components/CandidatureSheet";
 import { CopyChip } from "../components/CopyChip";
@@ -56,9 +59,13 @@ const STATE_CODES = new Set([
 /** Commande en vol : une décision de la feuille, ou un geste de l'onglet Réglages. */
 type Pending = Decision | SettingsCommand;
 
-const TABS = ["candidatures", "settings"] as const;
+const TABS = ["candidatures", "availability", "settings"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_KEY = { candidatures: "organizer.tab.candidatures", settings: "organizer.tab.settings" } as const;
+const TAB_KEY = {
+  candidatures: "organizer.tab.candidatures",
+  availability: "organizer.tab.availability",
+  settings: "organizer.tab.settings",
+} as const;
 
 export interface OrganizerPageDeps {
   now: () => number;
@@ -80,6 +87,9 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
   const [gone, setGone] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("candidatures");
+  /** Choix de l'onglet Disponibilités (vue, filtre, créneau), gardés d'un onglet à l'autre. */
+  const [gridChoice, setGridChoice] = useState<GridChoice>(INITIAL_GRID_CHOICE);
+  const onGridChoice = useCallback((patch: Partial<GridChoice>) => setGridChoice((c) => ({ ...c, ...patch })), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [sheetError, setSheetError] = useState<string | null>(null);
@@ -104,6 +114,7 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
   const errorAt = useRef(0);
   const trigger = useRef<HTMLElement | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const gridHeading = useRef<HTMLHeadingElement>(null);
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
 
   const clearFresh = useCallback(() => {
@@ -166,6 +177,7 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
     busyRef.current = false;
     clearFresh();
     setOpenId(null);
+    setGridChoice(INITIAL_GRID_CHOICE);
     setPending(null);
     setSheetError(null);
     setActionError(null);
@@ -339,7 +351,8 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
             tabIndex={tab === id ? 0 : -1}
             onClick={() => setTab(id)}
             onKeyDown={onTabKey}
-            className={`min-h-tap flex-1 border-b-2 px-3 text-label ${tab === id ? "border-accent text-ink-primary" : "border-transparent text-ink-secondary"}`}
+            // Largeur selon le libellé ; à 320 px, un libellé passe sur deux lignes plutôt que de déborder.
+            className={`min-h-tap min-w-0 flex-auto border-b-2 px-1 text-center text-label [overflow-wrap:anywhere] hyphens-auto ${tab === id ? "border-accent text-ink-primary" : "border-transparent text-ink-secondary"}`}
           >
             {t(TAB_KEY[id])}
           </button>
@@ -379,6 +392,17 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
               ))}
             </ul>
           )
+        ) : tab === "availability" ? (
+          <AvailabilityGrid
+            view={view}
+            reference={reference}
+            now={deps.now}
+            fresh={fresh}
+            onOpen={openSheet}
+            choice={gridChoice}
+            onChoice={onGridChoice}
+            headingRef={gridHeading}
+          />
         ) : (
           <>
             {/* Changer d'appareil : copier ce lien, le coller ailleurs (EXPERIENCE.md *Liens et appareils*). */}
@@ -433,7 +457,8 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
           onDecide={decide}
           onClose={() => setOpenId(null)}
           trigger={trigger}
-          fallbackFocus={heading}
+          // Ligne de la grille sortie de la vue (filtre) : le focus revient au titre du panneau.
+          fallbackFocus={tab === "availability" ? gridHeading : heading}
         />
       )}
     </main>
