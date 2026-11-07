@@ -4,7 +4,9 @@
 
 mod common;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::http::{Method, StatusCode};
 use common::candidatures::*;
@@ -13,7 +15,10 @@ use serde_json::{Value, json};
 use server::app::AppState;
 use server::config::Config;
 use server::http::form_token::FormClass;
+use server::infra::clock::FixedClock;
+use server::infra::ids::{DeterministicIdGenerator, IdGenerator, NONCE_BYTES, PublicId, Secret};
 use server::infra::links::{self, Right};
+use server::infra::reference::ReferenceStore;
 
 const JOIN_CANDIDATURES: &str = "/api/join/candidatures";
 
@@ -353,6 +358,96 @@ async fn cancelled_event_is_closed_before_any_field_rule() {
     assert_nothing_written(&state, "closed first").await;
 }
 
+/// Générateur d'ids qui signale le premier id public demandé une fois armé : à cet instant, la
+/// candidature a été validée hors transaction et la commande va prendre la connexion d'écriture.
+#[derive(Default)]
+struct Gate {
+    inner: DeterministicIdGenerator,
+    armed: AtomicBool,
+    fired: AtomicBool,
+}
+
+impl IdGenerator for Gate {
+    fn public_id(&self) -> PublicId {
+        if self.armed.swap(false, Ordering::SeqCst) {
+            self.fired.store(true, Ordering::SeqCst);
+        }
+        self.inner.public_id()
+    }
+
+    fn secret(&self) -> Secret {
+        self.inner.secret()
+    }
+
+    fn nonce(&self) -> [u8; NONCE_BYTES] {
+        self.inner.nonce()
+    }
+}
+
+#[tokio::test]
+async fn a_change_between_the_first_read_and_the_transaction_is_seen() {
+    // Report de 2-2 : un créneau supprimé, une région ou une portée changée par l'organisateur
+    // entre la lecture hors transaction et l'écriture. Jamais un 500 de clé étrangère.
+    for (name, change, by_slot, code, field) in [
+        (
+            "slot",
+            "DELETE FROM slots WHERE id = ?",
+            true,
+            "candidature.slot_unknown",
+            "availabilities.1.slotId",
+        ),
+        (
+            "region",
+            "UPDATE events SET region = 'na_west' WHERE id = ?",
+            false,
+            "candidature.server_out_of_region",
+            "server",
+        ),
+        (
+            "scope",
+            "UPDATE events SET faction_scope = 'elyos' WHERE id = ?",
+            false,
+            "candidature.faction_out_of_scope",
+            "server",
+        ),
+    ] {
+        let gate = Arc::new(Gate::default());
+        let state = AppState::new(
+            memory_db(&format!("cand_race_{name}")).await,
+            Arc::new(FixedClock::new(NOW.parse().unwrap())),
+            gate.clone(),
+            ReferenceStore::with(reference_set()),
+            &test_config(&[("RATE_CREATE", "100/h"), ("RATE_CANDIDATURE", "1000/h")]),
+        );
+        let router = fixture_router(state.clone());
+        let e = create(&state, &router, "all").await;
+        // La connexion d'écriture unique est tenue : la commande lit et valide, puis attend.
+        let mut held = state.db.write.acquire().await.unwrap();
+        gate.armed.store(true, Ordering::SeqCst);
+        let task = {
+            let (router, uri, body) = (router.clone(), public_uri(&e.id), nominal(&state, &e));
+            tokio::spawn(async move { post_json(&router, &uri, &body).await })
+        };
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !gate.fired.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the command validated outside the transaction");
+        let target = if by_slot { &e.slots[1] } else { &e.id };
+        sqlx::query(change)
+            .bind(target)
+            .execute(&mut *held)
+            .await
+            .unwrap();
+        drop(held);
+        let (res, text) = task.await.unwrap();
+        assert_fields(&res, &text, code, json!({ field: code }));
+        assert_nothing_written(&state, name).await;
+    }
+}
+
 #[tokio::test]
 async fn unknown_event_is_404() {
     let (state, router) = setup("unknown").await;
@@ -507,8 +602,18 @@ async fn no_secret_nor_pseudo_in_the_logs() {
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
         body
     };
-    // Même gabarit que `events_create::secrets_never_reach_the_logs`.
-    requests().await;
+    // Même gabarit que `events_create::secrets_never_reach_the_logs`, avec un premier passage sous
+    // un abonné muet : sans abonné, le niveau maximal est `OFF` et aucun callsite ne s'enregistre ;
+    // un autre test pourrait alors enregistrer le premier, depuis son fil sans abonné, et figer son
+    // intérêt à « jamais ». Enregistrés ici, ils sont tous réévalués par le `set_default` qui suit.
+    {
+        let mute = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(std::io::sink)
+            .finish();
+        let _mute = tracing::subscriber::set_default(mute);
+        requests().await;
+    }
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let captured = Captured::default();
     let writer = captured.clone();

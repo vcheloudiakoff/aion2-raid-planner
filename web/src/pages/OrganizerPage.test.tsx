@@ -9,7 +9,7 @@ import { resetClientForTests } from "../api/client";
 import { LINKS_KEY } from "../api/links";
 import type { OrganizerCandidature, OrganizerEvent } from "../api/types";
 import { resetLangForTests } from "../i18n";
-import { byText, click, key, mount, type Mounted } from "../test/dom";
+import { byText, click, fill, key, mount, type Mounted } from "../test/dom";
 import { EVENT_ID, JOIN, KAEL, LIO, NYRA, NYRA_TWIN, ORGANIZER, TOMA, organizerEvent, reference } from "../test/fixtures";
 import { REFRESH_MS } from "./EventPage";
 import { FRESH_MS, OrganizerPage } from "./OrganizerPage";
@@ -133,7 +133,7 @@ describe("page", () => {
     expect(document.title).not.toContain(ORGANIZER);
   });
 
-  it("follows the tablist pattern, Candidatures selected first, Réglages read-only", async () => {
+  it("follows the tablist pattern, Candidatures selected first", async () => {
     serve(() => json(organizerEvent));
     await render();
     const list = q('[role="tablist"]')!;
@@ -152,13 +152,8 @@ describe("page", () => {
     click(tabs()[1]);
     expect(tabs()[1].getAttribute("aria-selected")).toBe("true");
     expect(q('[data-testid="candidatures"]')).toBeNull();
-    const settings = q<HTMLElement>('[data-testid="settings"]')!;
-    expect(settings.querySelector('[data-testid="summary"] h2')!.textContent).toBe("Instance Une · mer. 9 janv. 2030");
-    const discord = byText(settings, "https://discord.gg/abcdef") as HTMLAnchorElement;
-    expect(discord.getAttribute("href")).toBe("https://discord.gg/abcdef");
-    expect(discord.getAttribute("rel")).toBe("noopener noreferrer");
-    // Lecture seule : aucun champ ni bouton de réglage.
-    expect(settings.querySelectorAll("input, select, textarea, button")).toHaveLength(0);
+    // Réglages : le formulaire de l'onglet (détaillé dans `EventSettings.test.tsx`).
+    expect(q('[data-testid="settings"] button[type="submit"]')!.textContent).toBe("Enregistrer");
 
     // Flèches : la sélection suit le focus.
     key(tabs()[1], "ArrowRight");
@@ -170,8 +165,20 @@ describe("page", () => {
     expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
   });
 
-  it("says when there is no Discord link", async () => {
-    serve(() => json({ ...organizerEvent, discordUrl: undefined }));
+  it("cancelled: Réglages is read-only, with the summary and the Discord link or its absence", async () => {
+    serve(() => json(viewWith({}, { status: "cancelled" })));
+    await render();
+    click(tabs()[1]);
+    const settings = q<HTMLElement>('[data-testid="settings"]')!;
+    expect(settings.querySelector('[data-testid="summary"] h2')!.textContent).toBe("Instance Une · mer. 9 janv. 2030");
+    const discord = byText(settings, "https://discord.gg/abcdef") as HTMLAnchorElement;
+    expect(discord.getAttribute("href")).toBe("https://discord.gg/abcdef");
+    expect(discord.getAttribute("rel")).toBe("noopener noreferrer");
+    // Lecture seule : aucun champ ni bouton de réglage.
+    expect(settings.querySelectorAll("input, select, textarea, button")).toHaveLength(0);
+    m.unmount();
+
+    serve(() => json(viewWith({}, { status: "cancelled" }, { discordUrl: undefined })));
     await render();
     click(tabs()[1]);
     expect(q('[data-testid="settings"]')!.textContent).toContain("Aucun lien Discord.");
@@ -529,6 +536,28 @@ describe("sheet", () => {
     await flush();
     expect(document.activeElement).toBe(inDialog("Refuser"));
     expect(inDialog("Annuler")).not.toBeNull();
+  });
+
+  it("disables the decisions while a Réglages command is in flight", async () => {
+    let answer: (r: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) =>
+        init?.method === "POST" ? new Promise<Response>((resolve) => (answer = resolve)) : json(organizerEvent),
+      ),
+    );
+    await render();
+    click(tabs()[1]);
+    fill(q<HTMLTextAreaElement>('[data-testid="settings"] textarea')!, "Go");
+    await press(q<HTMLButtonElement>('[data-testid="settings"] button[type="submit"]'));
+    click(tabs()[0]);
+    click(row(NYRA));
+    expect(inDialog("Accepter")!.disabled).toBe(true);
+    expect(inDialog("Refuser")!.disabled).toBe(true);
+    await act(async () => answer(json(viewWith({}, { note: "Go" }))));
+    await flush();
+    expect(inDialog("Accepter")!.disabled).toBe(false);
+    expect(inDialog("Refuser")!.disabled).toBe(false);
   });
 
   it("keeps the sheet open with the error on another refusal", async () => {

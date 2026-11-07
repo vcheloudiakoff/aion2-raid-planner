@@ -277,6 +277,30 @@ describe("new event form", () => {
     expect(posts(calls)).toEqual([]);
   });
 
+  it("never reads an unreadable number as an empty one", () => {
+    const calls = serve();
+    render();
+    fill(slotDate(0), "2026-11-11T21:00");
+    const reason = "Les nombres doivent être entiers : CP et durées.";
+    // Saisie que le navigateur ne sait pas lire : valeur rapportée vide, `validity.badInput`.
+    const garble = (el: HTMLInputElement) => {
+      Object.defineProperty(el, "validity", { configurable: true, value: { badInput: true } });
+      fill(el, "");
+    };
+    const retype = (el: HTMLInputElement, value: string) => {
+      Reflect.deleteProperty(el, "validity");
+      fill(el, value);
+    };
+    for (const input of [q<HTMLInputElement>('input[max="999999"]'), slotDuration(0)]) {
+      garble(input);
+      expect(publish().disabled).toBe(true);
+      expect(byText(m.container, reason)).toBeTruthy();
+      retype(input, "");
+      expect(publish().disabled).toBe(false);
+    }
+    expect(posts(calls)).toEqual([]);
+  });
+
   it("clears slot errors when a slot is removed, and a field error when it changes", async () => {
     serve(problem("slot.in_past", { "slots.1.startsAt": "slot.in_past", note: "event.note_invalid" }));
     render();

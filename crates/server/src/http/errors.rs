@@ -10,7 +10,7 @@ use axum::http::StatusCode;
 use axum::http::header::{CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 use axum::response::{IntoResponse, Response};
 use domain::candidature::{CandidatureError, OrganizerRefusal, ParticipantRefusal};
-use domain::event::EventError;
+use domain::event::{EventError, EventRefusal};
 use serde::Serialize;
 
 pub const PROBLEM_JSON: &str = "application/problem+json";
@@ -69,6 +69,7 @@ codes! {
     EventClosed => "event.closed", CONFLICT;
     EventDiscordUrlInvalid => "event.discord_url_invalid", BAD_REQUEST;
     EventFactionScopeNotAllowed => "event.faction_scope_not_allowed", BAD_REQUEST;
+    EventFieldImmutable => "event.field_immutable", CONFLICT;
     EventLocked => "event.locked", CONFLICT;
     EventMinCpOutOfRange => "event.min_cp_out_of_range", BAD_REQUEST;
     EventNotFound => "event.not_found", NOT_FOUND;
@@ -90,6 +91,7 @@ codes! {
     SlotDuplicate => "slot.duplicate", BAD_REQUEST;
     SlotDurationOutOfRange => "slot.duration_out_of_range", BAD_REQUEST;
     SlotInPast => "slot.in_past", BAD_REQUEST;
+    SlotNotFound => "slot.not_found", NOT_FOUND;
 }
 
 /// Entités admises pour un code (AD-5, plus `server` décidé pour la story 1-5).
@@ -135,6 +137,16 @@ impl From<EventError> for Code {
             EventError::DiscordUrlInvalid => Code::EventDiscordUrlInvalid,
             EventError::MinCpOutOfRange => Code::EventMinCpOutOfRange,
             EventError::ClassBoundsInvalid => Code::EventClassBoundsInvalid,
+            EventError::FieldImmutable => Code::EventFieldImmutable,
+        }
+    }
+}
+
+impl From<EventRefusal> for Code {
+    fn from(r: EventRefusal) -> Self {
+        match r {
+            EventRefusal::Closed => Code::EventClosed,
+            EventRefusal::Locked => Code::EventLocked,
         }
     }
 }
@@ -385,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn every_event_error_maps_to_a_bad_request() {
+    fn every_event_error_but_a_frozen_field_maps_to_a_bad_request() {
         for e in [
             EventError::ReferenceUnknown,
             EventError::FactionScopeNotAllowed,
@@ -400,6 +412,39 @@ mod tests {
         ] {
             assert_eq!(Code::from(e).status(), StatusCode::BAD_REQUEST, "{e:?}");
         }
+        assert_eq!(
+            Code::from(EventError::FieldImmutable),
+            Code::EventFieldImmutable
+        );
+        assert_eq!(Code::EventFieldImmutable.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn a_frozen_field_is_a_409_that_names_its_path() {
+        let (res, json) = render(Problem::fields(vec![(
+            "region".into(),
+            EventError::FieldImmutable,
+        )]))
+        .await;
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        assert_eq!(json["code"], "event.field_immutable");
+        assert_eq!(
+            json["fields"],
+            serde_json::json!({ "region": "event.field_immutable" })
+        );
+    }
+
+    #[test]
+    fn every_event_refusal_is_a_conflict_and_an_unknown_slot_is_404() {
+        for (r, code) in [
+            (EventRefusal::Closed, Code::EventClosed),
+            (EventRefusal::Locked, Code::EventLocked),
+        ] {
+            assert_eq!(Code::from(r), code);
+            assert_eq!(code.status(), StatusCode::CONFLICT, "{code}");
+        }
+        assert_eq!(Code::SlotNotFound.as_str(), "slot.not_found");
+        assert_eq!(Code::SlotNotFound.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]

@@ -227,6 +227,7 @@ pub struct CreateEvent {
     pub class_bounds: Option<BTreeMap<String, NewBound>>,
 }
 
+/// Créneau saisi : un des `slots` de `POST /api/events`, ou le corps de `POST /api/organizer/slots`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewSlot {
@@ -234,6 +235,15 @@ pub struct NewSlot {
     /// Absente : durée de l'instance.
     #[serde(default)]
     pub duration_min: Option<i64>,
+}
+
+impl From<NewSlot> for ev::NewSlot {
+    fn from(s: NewSlot) -> Self {
+        Self {
+            starts_at: s.starts_at,
+            duration_min: s.duration_min,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -249,34 +259,28 @@ impl From<CreateEvent> for ev::NewEvent {
             instance: c.instance,
             region: c.region,
             faction_scope: c.faction_scope,
-            slots: c
-                .slots
-                .into_iter()
-                .map(|s| ev::NewSlot {
-                    starts_at: s.starts_at,
-                    duration_min: s.duration_min,
-                })
-                .collect(),
+            slots: c.slots.into_iter().map(Into::into).collect(),
             note: c.note.unwrap_or_default(),
             discord_url: c.discord_url,
             visibility: c.visibility.unwrap_or_default(),
             min_cp: c.min_cp,
-            class_bounds: c
-                .class_bounds
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(k, b)| {
-                    (
-                        k,
-                        ev::NewBound {
-                            min: b.min,
-                            max: b.max,
-                        },
-                    )
-                })
-                .collect(),
+            class_bounds: bounds(c.class_bounds.unwrap_or_default()),
         }
     }
+}
+
+fn bounds(all: BTreeMap<String, NewBound>) -> BTreeMap<String, ev::NewBound> {
+    all.into_iter()
+        .map(|(k, b)| {
+            (
+                k,
+                ev::NewBound {
+                    min: b.min,
+                    max: b.max,
+                },
+            )
+        })
+        .collect()
 }
 
 /// Réponse 201 de `POST /api/events`, rendue une seule fois. Liens relatifs : la SPA les préfixe par
@@ -483,3 +487,48 @@ pub struct SetCandidatureStatus {
     pub candidature_id: String,
     pub status: Decision,
 }
+
+/// Corps de `POST /api/organizer/settings` : il remplace tous les réglages. `discordUrl` absent ou
+/// vide et `minCp` absent effacent la valeur ; une classe omise de `classBounds` garde ses bornes.
+/// Nombres en `i64` : une valeur hors bornes est une erreur de champ, pas un corps illisible.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateEventSettings {
+    pub instance: String,
+    pub region: String,
+    pub faction_scope: FactionScope,
+    pub note: String,
+    #[serde(default)]
+    pub discord_url: Option<String>,
+    pub visibility: Visibility,
+    #[serde(default)]
+    pub min_cp: Option<i64>,
+    pub class_bounds: BTreeMap<String, NewBound>,
+}
+
+impl From<UpdateEventSettings> for ev::NewSettings {
+    fn from(u: UpdateEventSettings) -> Self {
+        Self {
+            instance: u.instance,
+            region: u.region,
+            faction_scope: u.faction_scope,
+            note: u.note,
+            discord_url: u.discord_url,
+            visibility: u.visibility,
+            min_cp: u.min_cp,
+            class_bounds: bounds(u.class_bounds),
+        }
+    }
+}
+
+/// Corps de `POST /api/organizer/slot-removal`. L'id vise un créneau que la commande cherche dans
+/// l'événement du lien, jamais ailleurs.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotRemoval {
+    pub slot_id: String,
+}
+
+/// Corps de `POST /api/organizer/cancellation` : vide, `{}`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Cancellation {}

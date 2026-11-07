@@ -4,7 +4,7 @@
 
 use domain::Timestamp;
 use domain::candidature::CandidatureStatus;
-use domain::event::{EventStatus, FactionScope, ValidEvent, Visibility};
+use domain::event::{EventStatus, FactionScope, ValidEvent, ValidSettings, ValidSlot, Visibility};
 use sqlx::SqliteConnection;
 use sqlx::sqlite::SqlitePool;
 
@@ -234,4 +234,87 @@ pub async fn discord_url(
             .fetch_optional(&mut *conn)
             .await?;
     Ok(row.map(|(url,)| url))
+}
+
+/// Remplace les réglages de l'événement et ses bornes. Seules les lignes `class_bounds` existantes
+/// sont touchées : aucune n'est ajoutée ni supprimée (AD-4).
+pub async fn update_settings(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+    settings: &ValidSettings,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE events SET instance = ?, region = ?, faction_scope = ?, visibility = ?, \
+         min_cp = ?, discord_url = ?, note = ? WHERE id = ?",
+    )
+    .bind(&settings.instance)
+    .bind(&settings.region)
+    .bind(settings.faction_scope.as_str())
+    .bind(settings.visibility.as_str())
+    .bind(settings.min_cp.map(i64::from))
+    .bind(&settings.discord_url)
+    .bind(&settings.note)
+    .bind(event_id)
+    .execute(&mut *conn)
+    .await?;
+    for bound in &settings.class_bounds {
+        sqlx::query(
+            "UPDATE class_bounds SET min_count = ?, max_count = ? WHERE event_id = ? AND class = ?",
+        )
+        .bind(i64::from(bound.min))
+        .bind(i64::from(bound.max))
+        .bind(event_id)
+        .bind(&bound.class)
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Ajoute un créneau à l'événement.
+pub async fn insert_slot(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+    slot_id: &str,
+    slot: &ValidSlot,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO slots (id, event_id, starts_at, duration_min) VALUES (?, ?, ?, ?)")
+        .bind(slot_id)
+        .bind(event_id)
+        .bind(slot.starts_at)
+        .bind(i64::from(slot.duration_min))
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
+/// Supprime le créneau `slot_id` s'il appartient à l'événement ; ses `availabilities` partent par la
+/// cascade déclarée (0002). Les statuts des candidatures ne bougent pas. Faux si rien n'est supprimé.
+pub async fn delete_slot(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+    slot_id: &str,
+) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query("DELETE FROM slots WHERE id = ? AND event_id = ?")
+        .bind(slot_id)
+        .bind(event_id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Annule l'événement : `status = cancelled` et `cancelled_at`. Rien d'autre ne change, liens
+/// compris.
+pub async fn cancel(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+    cancelled_at: Timestamp,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE events SET status = ?, cancelled_at = ? WHERE id = ?")
+        .bind(EventStatus::Cancelled.as_str())
+        .bind(cancelled_at)
+        .bind(event_id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
 }

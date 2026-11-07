@@ -2,17 +2,21 @@
 //! (`accepted`, `direct`), et crée son lien participant, dans une seule transaction.
 //!
 //! Ordre (celui de `create_event`) : jeton de formulaire et honeypot, lecture de l'événement pour
-//! valider contre sa région, sa portée, ses créneaux et ses bornes, validation pure, transaction sur
-//! `db.write`, disjoncteur `Trip::Candidatures`, relecture du statut et du compte, insertions, commit,
-//! puis comptage par le disjoncteur. Ni pseudo ni secret journalisé ; l'événement et la candidature
-//! le sont par leur id public (AD-15).
+//! valider contre sa région, sa portée, ses créneaux et ses bornes, validation pure (refus rapide),
+//! transaction sur `db.write`, disjoncteur `Trip::Candidatures`, relecture de l'événement, de ses
+//! créneaux et du compte, validation rejouée sur cet état frais (AD-16), insertions, commit, puis
+//! comptage par le disjoncteur. Un créneau supprimé entre la première lecture et la transaction est
+//! donc `candidature.slot_unknown`, jamais une violation de clé étrangère, et un changement de
+//! région ou de portée est vu. Ni pseudo ni secret journalisé ; l'événement et la candidature le
+//! sont par leur id public (AD-15).
 
 use domain::Timestamp;
 use domain::candidature::{
-    CANDIDATURES_MAX, CandidatureStatus, EventContext, Origin, SlotRef, ValidCandidature,
+    CANDIDATURES_MAX, CandidatureStatus, EventContext, NewCandidature, Origin, SlotRef,
     validate_candidature,
 };
 use domain::event::EventStatus;
+use domain::reference::ReferenceSet;
 use sqlx::Connection;
 
 use crate::app::AppState;
@@ -53,7 +57,8 @@ pub async fn submit_candidature(
     if event.status == EventStatus::Cancelled {
         return Err(Code::EventClosed.into());
     }
-    let candidature = validate_candidature(&reference, &context(&event), now, body.data.into())
+    let input: NewCandidature = body.data.into();
+    validate_candidature(&reference, &context(&event), now, input.clone())
         .map_err(Problem::fields)?;
 
     let submitted = Submitted {
@@ -62,7 +67,7 @@ pub async fn submit_candidature(
         participant: state.ids.secret(),
         status: origin.initial_status(),
     };
-    write(state, &submitted, origin, &candidature, now)
+    write(state, &reference, &submitted, origin, input, now)
         .await
         .map_err(|e| match e {
             WriteError::Refused(p) => p,
@@ -110,9 +115,10 @@ impl From<sqlx::Error> for WriteError {
 
 async fn write(
     state: &AppState,
+    reference: &ReferenceSet,
     submitted: &Submitted,
     origin: Origin,
-    candidature: &ValidCandidature,
+    input: NewCandidature,
     now: Timestamp,
 ) -> Result<(), WriteError> {
     // La connexion d'écriture unique reste tenue du `check` au `record` (voir `create_event`).
@@ -124,6 +130,9 @@ async fn write(
         .check(Trip::Candidatures)
         .map_err(WriteError::Refused)?;
     let event_id = submitted.event_id.as_str();
+    let Some(event) = events::load(&mut tx, event_id).await? else {
+        return Err(WriteError::Refused(Code::EventNotFound.into()));
+    };
     match events::status_and_candidature_count(&mut tx, event_id).await? {
         None => return Err(WriteError::Refused(Code::EventNotFound.into())),
         // Une candidature en `locked` reste acceptée et non placée (AD-4).
@@ -135,12 +144,16 @@ async fn write(
         }
         Some(_) => {}
     }
+    // Rejouée sur l'état relu dans la transaction : créneaux, région et portée peuvent avoir changé
+    // depuis la lecture hors transaction.
+    let candidature = validate_candidature(reference, &context(&event), now, input)
+        .map_err(|e| WriteError::Refused(Problem::fields(e)))?;
     let candidature_id = submitted.candidature_id.as_str();
     candidatures::insert(
         &mut tx,
         candidature_id,
         event_id,
-        candidature,
+        &candidature,
         submitted.status,
         origin,
         now,

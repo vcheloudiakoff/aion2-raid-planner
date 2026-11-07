@@ -1,29 +1,54 @@
 // Page organisateur `/o/<secret>` (CAP-5, EXPERIENCE.md *Information Architecture*, *State
 // Patterns*) : titre instance + date, barre d'onglets fixe Candidatures · Réglages. Candidatures
 // liste toutes les candidatures dans l'ordre de création, chaque ligne ouvre sa feuille (accepter,
-// refuser, copier `Pseudo[SRV]`). Réglages montre le résumé public et le lien Discord en lecture
-// seule (réglages en 2-5). Relecture silencieuse toutes les 10 s, feuille ouverte comprise, arrêtée
-// sur un lien mort ou un raid annulé ; une ligne apparue au rafraîchissement porte un liseré or 3 s.
-// Le secret part en en-tête seulement et n'apparaît ni dans la page ni dans `document.title`.
+// refuser, copier `Pseudo[SRV]`). Réglages (`EventSettings`) règle l'événement, ses créneaux et son
+// annulation ; raid annulé, l'onglet est en lecture seule. Relecture silencieuse toutes les 10 s,
+// feuille ouverte comprise, arrêtée sur un lien mort ou un raid annulé ; une ligne apparue au
+// rafraîchissement porte un liseré or 3 s. Toutes les commandes passent par `command` : une seule à
+// la fois, la relecture l'attend, sa vue s'applique dans l'ordre des requêtes. Le secret part en
+// en-tête seulement et n'apparaît ni dans la page ni dans `document.title`.
 
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useParams } from "react-router";
 import { ApiError } from "../api/client";
 import { saveOrganizerLink } from "../api/links";
-import { getOrganizerView, setCandidatureStatus } from "../api/organizer";
+import {
+  addSlot,
+  cancelEvent,
+  getOrganizerView,
+  removeSlot,
+  setCandidatureStatus,
+  updateEventSettings,
+} from "../api/organizer";
 import type { Decision, OrganizerEvent, ReferenceSet } from "../api/types";
 import { CandidatureRow } from "../components/CandidatureRow";
 import { CandidatureSheet } from "../components/CandidatureSheet";
-import { Summary, eventTitle } from "../components/EventSummary";
+import {
+  EventSettings,
+  type CommandOutcome,
+  type SettingsActions,
+  type SettingsCommand,
+} from "../components/EventSettings";
+import { eventTitle } from "../components/EventSummary";
 import { t, useLang } from "../i18n";
+import { errorText } from "../lib/form";
 import { DeadLink, GONE, REFRESH_MS } from "./EventPage";
-import { errorText } from "./NewEvent";
 
 /** Durée du liseré or d'une nouvelle candidature. */
 export const FRESH_MS = 3000;
 
 /** Refus d'état d'une commande : la vue a changé, elle est relue et la feuille fermée. */
-const STATE_CODES = new Set(["event.closed", "candidature.transition_forbidden", "candidature.not_found"]);
+const STATE_CODES = new Set([
+  "event.closed",
+  "event.locked",
+  "event.field_immutable",
+  "candidature.transition_forbidden",
+  "candidature.not_found",
+  "slot.not_found",
+]);
+
+/** Commande en vol : une décision de la feuille, ou un geste de l'onglet Réglages. */
+type Pending = Decision | SettingsCommand;
 
 const TABS = ["candidatures", "settings"] as const;
 type Tab = (typeof TABS)[number];
@@ -49,7 +74,7 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("candidatures");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [busy, setBusy] = useState<Decision | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
@@ -131,7 +156,7 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
     busyRef.current = false;
     clearFresh();
     setOpenId(null);
-    setBusy(null);
+    setPending(null);
     setSheetError(null);
     setActionError(null);
     setView(null);
@@ -182,36 +207,58 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
     setOpenId(id);
   }
 
-  async function decide(decision: Decision) {
-    if (!openId || busyRef.current) return;
+  /** Lance une commande, une à la fois : la relecture périodique attend sa réponse, et la vue rendue
+   * s'applique si aucune plus récente ne l'a précédée. Un lien mort ou un refus d'état est traité ici
+   * (message dans la page, feuille fermée, vue relue) ; les autres refus reviennent à l'appelant, qui
+   * les montre près du geste. */
+  async function command(kind: Pending, send: () => Promise<OrganizerEvent>): Promise<CommandOutcome> {
+    if (busyRef.current) return { ok: false, handled: true, fields: {} };
     const n = ++issued.current;
     busyRef.current = true;
-    setBusy(decision);
-    setSheetError(null);
+    setPending(kind);
     try {
-      apply(n, await setCandidatureStatus(secret, openId, decision), "command");
+      const v = await send();
+      apply(n, v, "command");
+      return { ok: true, view: v };
     } catch (err) {
-      const code = err instanceof ApiError ? err.code : undefined;
-      if (code && GONE.has(code)) {
+      const api = err instanceof ApiError ? err : new ApiError(0);
+      if (api.code && GONE.has(api.code)) {
         stopRef.current();
         setOpenId(null);
         setGone(true);
         setView(null);
-      } else if (code && STATE_CODES.has(code)) {
-        // L'état a changé (annulé, retirée, hors du raid) : on ferme et on relit.
-        setActionError(errorText(code));
+        return { ok: false, handled: true, code: api.code, fields: {} };
+      }
+      if (api.code && STATE_CODES.has(api.code)) {
+        // L'état a changé (annulé, verrouillé, retirée, hors du raid) : on ferme et on relit.
+        setActionError(errorText(api.code));
         setOpenId(null);
         reloadRef.current();
         errorAt.current = issued.current;
-      } else {
-        // Réseau, quota : la feuille reste ouverte avec l'erreur.
-        setSheetError(errorText(code));
+        return { ok: false, handled: true, code: api.code, fields: api.fields };
       }
+      // Réseau, quota, champ refusé : à l'appelant.
+      return { ok: false, handled: false, code: api.code, fields: api.fields };
     } finally {
       busyRef.current = false;
-      setBusy(null);
+      setPending(null);
     }
   }
+
+  async function decide(decision: Decision) {
+    if (!openId) return;
+    setSheetError(null);
+    const outcome = await command(decision, () => setCandidatureStatus(secret, openId, decision));
+    // Réseau, quota : la feuille reste ouverte avec l'erreur.
+    if (!outcome.ok && !outcome.handled) setSheetError(errorText(outcome.code));
+  }
+
+  const settingsActions: SettingsActions = {
+    save: (body) => command("settings", () => updateEventSettings(secret, body)),
+    addSlot: (slot) => command("addSlot", () => addSlot(secret, slot)),
+    removeSlot: (slotId) => command("removeSlot", () => removeSlot(secret, slotId)),
+    cancel: () => command("cancel", () => cancelEvent(secret)),
+  };
 
   function onTabKey(e: KeyboardEvent<HTMLButtonElement>) {
     const i = TABS.indexOf(tab);
@@ -313,22 +360,14 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
             </ul>
           )
         ) : (
-          <div data-testid="settings" className="mt-4">
-            <Summary event={view.event} reference={reference} now={deps.now} heading="h2" />
-            <h3 className="mt-6 text-meta text-ink-secondary">{t("organizer.discord")}</h3>
-            {view.discordUrl ? (
-              <a
-                href={view.discordUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 block text-body break-all text-ink-primary"
-              >
-                {view.discordUrl}
-              </a>
-            ) : (
-              <p className="mt-1 text-body text-ink-secondary">{t("organizer.noDiscord")}</p>
-            )}
-          </div>
+          <EventSettings
+            view={view}
+            reference={reference}
+            now={deps.now}
+            busy={pending}
+            actions={settingsActions}
+            fallbackFocus={heading}
+          />
         )}
       </div>
 
@@ -338,7 +377,8 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
           event={view.event}
           reference={reference}
           now={deps.now}
-          busy={busy}
+          busy={pending === "accepted" || pending === "rejected" ? pending : null}
+          otherPending={pending !== null && pending !== "accepted" && pending !== "rejected"}
           error={sheetError}
           onDecide={decide}
           onClose={() => setOpenId(null)}

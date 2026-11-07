@@ -15,7 +15,7 @@ import { CandidatureForm } from "../components/CandidatureForm";
 import { Summary } from "../components/EventSummary";
 import { t, useLang } from "../i18n";
 import { readCandidatePrefs, writeCandidatePrefs } from "../lib/storage";
-import { errorText } from "./NewEvent";
+import { errorText } from "../lib/form";
 
 /** Relecture silencieuse (EXPERIENCE.md *Rafraîchissement*), ici et sur Ma candidature. */
 export const REFRESH_MS = 10_000;

@@ -1,8 +1,11 @@
-//! Création d'un événement (AD-4) : règles pures sur la saisie brute de l'organisateur.
+//! Événement (AD-4) : règles pures sur la saisie brute de l'organisateur, à la création puis sous
+//! son lien (réglages, créneaux, annulation).
 //!
-//! [`validate_new_event`] prend le `ReferenceSet` une seule fois (AD-6) et `now` de l'horloge injectée
-//! (AD-11). Toutes les erreurs de champ sont rendues ensemble, dans l'ordre des champs du formulaire :
-//! la couche `http` prend la première pour `code` et les autres pour `fields`.
+//! [`validate_new_event`], [`validate_added_slot`] et [`validate_settings`] prennent le
+//! `ReferenceSet` une seule fois (AD-6) et, quand il le faut, `now` de l'horloge injectée (AD-11).
+//! Toutes les erreurs de champ sont rendues ensemble, dans l'ordre des champs du formulaire : la
+//! couche `http` prend la première pour `code` et les autres pour `fields`. [`event_may`] porte la
+//! mutabilité d'AD-4 : quel geste l'état de l'événement permet.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -177,6 +180,9 @@ pub enum EventError {
     DiscordUrlInvalid,
     MinCpOutOfRange,
     ClassBoundsInvalid,
+    /// `instance`, `region` ou `factionScope` changé alors qu'une candidature existe : un conflit
+    /// d'état (409), vérifié avant toute autre règle de champ.
+    FieldImmutable,
 }
 
 /// Chemin JSON camelCase du champ fautif (`slots.2.startsAt`) et son cas.
@@ -212,55 +218,25 @@ pub fn validate_new_event(
         fail("factionScope".into(), EventError::FactionScopeNotAllowed);
     }
 
-    if !(SLOTS_MIN..=SLOTS_MAX).contains(&input.slots.len()) {
+    if !slot_count_allowed(input.slots.len()) {
         fail("slots".into(), EventError::SlotCountOutOfRange);
     }
-    let mut seen = HashSet::new();
+    let mut taken = HashSet::new();
     let mut slots = Vec::with_capacity(input.slots.len());
     for (n, slot) in input.slots.iter().enumerate() {
-        if slot.starts_at <= now {
-            fail(format!("slots.{n}.startsAt"), EventError::SlotInPast);
-        } else if !seen.insert(slot.starts_at) {
-            fail(format!("slots.{n}.startsAt"), EventError::SlotDuplicate);
-        }
-        let duration = slot
-            .duration_min
-            .or(instance.map(|i| i64::from(i.duration_min)));
-        match duration {
-            Some(d) if (DURATION_MIN_MINUTES..=DURATION_MAX_MINUTES).contains(&d) => {
-                slots.push(ValidSlot {
-                    starts_at: slot.starts_at,
-                    // Borné ci-dessus : tient dans un `u32`.
-                    duration_min: d as u32,
-                });
-            }
-            // Durée de l'instance hors bornes : l'organisateur la corrige sur le créneau.
-            Some(_) => fail(
-                format!("slots.{n}.durationMin"),
-                EventError::SlotDurationOutOfRange,
-            ),
-            // Instance inconnue, déjà signalée.
-            None => {}
-        }
+        // Instance inconnue, déjà signalée : sans durée par défaut, le créneau n'est pas retenu.
+        let checked = check_slot(
+            slot,
+            now,
+            &mut taken,
+            instance.map(|i| i.duration_min),
+            |field, e| fail(format!("slots.{n}.{}", field.as_str()), e),
+        );
+        slots.extend(checked);
     }
 
-    if validate::note(&input.note).is_err() {
-        fail("note".into(), EventError::NoteInvalid);
-    }
-    let discord_url = input.discord_url.filter(|u| !u.is_empty());
-    if let Some(url) = &discord_url
-        && validate::discord_url(url).is_err()
-    {
-        fail("discordUrl".into(), EventError::DiscordUrlInvalid);
-    }
-    let min_cp = match input.min_cp.map(validate::cp) {
-        Some(Ok(cp)) => Some(cp),
-        Some(Err(_)) => {
-            fail("minCp".into(), EventError::MinCpOutOfRange);
-            None
-        }
-        None => None,
-    };
+    let (discord_url, min_cp) =
+        check_details(&input.note, input.discord_url, input.min_cp, &mut fail);
 
     let cap = instance.map(|i| i64::from(i.parties) * i64::from(i.party_size));
     for (class, bound) in &input.class_bounds {
@@ -327,6 +303,319 @@ pub fn default_bound(class: &str, default_min: u32, default_max: u32, cap: u32) 
         class: class.to_owned(),
         min: default_min.min(max),
         max,
+    }
+}
+
+/// Règles des champs libres, partagées par la création et les réglages (`domain::validate`) : note,
+/// lien Discord (vide = absent) et CP minimum. Rend le lien et le CP prêts à écrire ; un CP refusé
+/// est rendu absent, l'erreur étant signalée.
+fn check_details(
+    note: &str,
+    discord_url: Option<String>,
+    min_cp: Option<i64>,
+    fail: &mut impl FnMut(String, EventError),
+) -> (Option<String>, Option<u32>) {
+    if validate::note(note).is_err() {
+        fail("note".into(), EventError::NoteInvalid);
+    }
+    let discord_url = discord_url.filter(|u| !u.is_empty());
+    if let Some(url) = &discord_url
+        && validate::discord_url(url).is_err()
+    {
+        fail("discordUrl".into(), EventError::DiscordUrlInvalid);
+    }
+    let min_cp = match min_cp.map(validate::cp) {
+        Some(Ok(cp)) => Some(cp),
+        Some(Err(_)) => {
+            fail("minCp".into(), EventError::MinCpOutOfRange);
+            None
+        }
+        None => None,
+    };
+    (discord_url, min_cp)
+}
+
+/// Nombre de créneaux permis pour un événement, passés compris : vérifié à la création, à l'ajout
+/// (le créneau en plus compris) et à la suppression (le créneau en moins décompté).
+pub fn slot_count_allowed(n: usize) -> bool {
+    (SLOTS_MIN..=SLOTS_MAX).contains(&n)
+}
+
+/// Champ d'un créneau saisi, pour le chemin de son erreur.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SlotField {
+    StartsAt,
+    DurationMin,
+}
+
+impl SlotField {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::StartsAt => "startsAt",
+            Self::DurationMin => "durationMin",
+        }
+    }
+}
+
+/// Règles d'un créneau saisi, partagées par la création et l'ajout : début strictement futur et
+/// distinct des débuts de `taken` (où il entre s'il est futur), durée saisie ou, à défaut, celle de
+/// l'instance, entre [`DURATION_MIN_MINUTES`] et [`DURATION_MAX_MINUTES`]. Rend le créneau s'il passe
+/// toutes les règles ; sans durée du tout (`default_duration` absente et rien de saisi), rien n'est
+/// signalé : à l'appelant de le faire.
+fn check_slot(
+    slot: &NewSlot,
+    now: Timestamp,
+    taken: &mut HashSet<Timestamp>,
+    default_duration: Option<u32>,
+    mut fail: impl FnMut(SlotField, EventError),
+) -> Option<ValidSlot> {
+    let mut start_ok = false;
+    if slot.starts_at <= now {
+        fail(SlotField::StartsAt, EventError::SlotInPast);
+    } else if !taken.insert(slot.starts_at) {
+        fail(SlotField::StartsAt, EventError::SlotDuplicate);
+    } else {
+        start_ok = true;
+    }
+    match slot.duration_min.or(default_duration.map(i64::from)) {
+        Some(d) if (DURATION_MIN_MINUTES..=DURATION_MAX_MINUTES).contains(&d) => {
+            start_ok.then_some(ValidSlot {
+                starts_at: slot.starts_at,
+                // Borné ci-dessus : tient dans un `u32`.
+                duration_min: d as u32,
+            })
+        }
+        // Durée de l'instance hors bornes : l'organisateur la corrige sur le créneau.
+        Some(_) => {
+            fail(SlotField::DurationMin, EventError::SlotDurationOutOfRange);
+            None
+        }
+        None => None,
+    }
+}
+
+/// Refus d'un ajout de créneau.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NewSlotError {
+    /// L'événement a déjà [`SLOTS_MAX`] créneaux, passés compris : rien dans la saisie n'y peut rien.
+    CountOutOfRange,
+    /// Erreurs de champ du créneau saisi, chemins `startsAt` et `durationMin`.
+    Fields(FieldErrors),
+}
+
+/// Ajout d'un créneau à un événement (AD-4) : les règles de la création ([`check_slot`],
+/// [`slot_count_allowed`]) contre les débuts des créneaux existants, passés compris.
+/// `instance_duration` est la durée de l'instance de l'événement, lue sans égard à `enabled` (la
+/// valeur n'est pas posée par l'ajout, AD-6) ; absente si la référence ne la connaît plus, la durée
+/// doit alors être saisie.
+pub fn validate_added_slot(
+    now: Timestamp,
+    existing: &[Timestamp],
+    instance_duration: Option<u32>,
+    input: NewSlot,
+) -> Result<ValidSlot, NewSlotError> {
+    if !slot_count_allowed(existing.len() + 1) {
+        return Err(NewSlotError::CountOutOfRange);
+    }
+    let mut errors: FieldErrors = Vec::new();
+    let mut taken: HashSet<Timestamp> = existing.iter().copied().collect();
+    let slot = check_slot(&input, now, &mut taken, instance_duration, |field, e| {
+        errors.push((field.as_str().into(), e))
+    });
+    if input.duration_min.is_none() && instance_duration.is_none() {
+        errors.push(("durationMin".into(), EventError::SlotDurationOutOfRange));
+    }
+    match slot {
+        Some(slot) if errors.is_empty() => Ok(slot),
+        _ => Err(NewSlotError::Fields(errors)),
+    }
+}
+
+/// Réglages saisis par l'organisateur : le corps remplace tout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewSettings {
+    pub instance: String,
+    pub region: String,
+    pub faction_scope: FactionScope,
+    pub note: String,
+    /// Vide ou absent : le lien est effacé.
+    pub discord_url: Option<String>,
+    pub visibility: Visibility,
+    /// Absent : le CP minimum est effacé.
+    pub min_cp: Option<i64>,
+    /// Bornes des classes déjà bornées par l'événement ; une classe omise garde les siennes.
+    pub class_bounds: BTreeMap<String, NewBound>,
+}
+
+/// Ce que les réglages doivent savoir de l'événement, relu dans la transaction de la commande.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentSettings {
+    pub instance: String,
+    pub region: String,
+    pub faction_scope: FactionScope,
+    /// Vrai dès qu'une ligne `candidatures` existe, quel que soit son statut.
+    pub has_candidatures: bool,
+    /// Lignes `class_bounds` de l'événement.
+    pub class_bounds: Vec<ClassBound>,
+}
+
+/// Réglages prêts à écrire.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidSettings {
+    pub instance: String,
+    pub region: String,
+    pub faction_scope: FactionScope,
+    pub note: String,
+    pub discord_url: Option<String>,
+    pub visibility: Visibility,
+    pub min_cp: Option<u32>,
+    /// Une borne par ligne existante, dans l'ordre de [`CurrentSettings::class_bounds`] : jamais une
+    /// ligne de plus ni de moins.
+    pub class_bounds: Vec<ClassBound>,
+}
+
+/// Réglages de l'organisateur (AD-4 *Mutabilité*, AD-6), dans cet ordre :
+///
+/// 1. dès qu'une candidature existe, `instance`, `region` ou `factionScope` différent de la valeur
+///    actuelle est [`EventError::FieldImmutable`] sur son chemin, seul rendu (un 409 passe avant les
+///    400) ; une valeur renvoyée inchangée passe toujours ;
+/// 2. les règles de la création, où « existe et `enabled` » ne porte que sur une valeur changée ;
+///    la portée n'est confrontée à l'instance que si l'une des deux change ;
+/// 3. les bornes : une classe sans ligne est inconnue, et chaque ligne (saisie ou gardée) respecte
+///    `0 ≤ min ≤ max ≤ parties × party_size` de l'instance résultante.
+pub fn validate_settings(
+    reference: &ReferenceSet,
+    current: &CurrentSettings,
+    input: NewSettings,
+) -> Result<ValidSettings, FieldErrors> {
+    let instance_changed = input.instance != current.instance;
+    let region_changed = input.region != current.region;
+    let scope_changed = input.faction_scope != current.faction_scope;
+    if current.has_candidatures {
+        let frozen: FieldErrors = [
+            ("instance", instance_changed),
+            ("region", region_changed),
+            ("factionScope", scope_changed),
+        ]
+        .into_iter()
+        .filter(|(_, changed)| *changed)
+        .map(|(path, _)| (path.to_owned(), EventError::FieldImmutable))
+        .collect();
+        if !frozen.is_empty() {
+            return Err(frozen);
+        }
+    }
+
+    let mut errors: FieldErrors = Vec::new();
+    let mut fail = |path: String, e: EventError| errors.push((path, e));
+
+    let instance = reference
+        .instances
+        .iter()
+        .find(|i| i.id == input.instance && (i.enabled || !instance_changed));
+    if instance.is_none() && instance_changed {
+        fail("instance".into(), EventError::ReferenceUnknown);
+    }
+    if region_changed
+        && !reference
+            .regions
+            .iter()
+            .any(|r| r.enabled && r.id == input.region)
+    {
+        fail("region".into(), EventError::ReferenceUnknown);
+    }
+    if (instance_changed || scope_changed)
+        && let Some(i) = instance
+        && !i.cross_faction
+        && input.faction_scope == FactionScope::All
+    {
+        fail("factionScope".into(), EventError::FactionScopeNotAllowed);
+    }
+
+    let (discord_url, min_cp) =
+        check_details(&input.note, input.discord_url, input.min_cp, &mut fail);
+
+    for class in input.class_bounds.keys() {
+        if !current.class_bounds.iter().any(|b| &b.class == class) {
+            fail(format!("classBounds.{class}"), EventError::ReferenceUnknown);
+        }
+    }
+    // Instance absente de la référence (inchangée, donc tolérée) : pas de plafond connu, seulement
+    // celui de la colonne.
+    let cap = instance.map_or(i64::from(u32::MAX), |i| {
+        i64::from(i.parties.saturating_mul(i.party_size))
+    });
+    let mut class_bounds = Vec::with_capacity(current.class_bounds.len());
+    for row in &current.class_bounds {
+        let (min, max) = match input.class_bounds.get(&row.class) {
+            Some(b) => (b.min, b.max),
+            None => (i64::from(row.min), i64::from(row.max)),
+        };
+        if min < 0 || min > max {
+            fail(
+                format!("classBounds.{}.min", row.class),
+                EventError::ClassBoundsInvalid,
+            );
+        } else if max > cap {
+            fail(
+                format!("classBounds.{}.max", row.class),
+                EventError::ClassBoundsInvalid,
+            );
+        } else {
+            class_bounds.push(ClassBound {
+                class: row.class.clone(),
+                // Validées ci-dessus : 0 ≤ min ≤ max ≤ cap ≤ `u32::MAX`.
+                min: min as u32,
+                max: max as u32,
+            });
+        }
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    Ok(ValidSettings {
+        instance: input.instance,
+        region: input.region,
+        faction_scope: input.faction_scope,
+        note: input.note,
+        discord_url,
+        visibility: input.visibility,
+        min_cp,
+        class_bounds,
+    })
+}
+
+/// Geste de l'organisateur sur son événement (AD-4 *Mutabilité*).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EventAction {
+    /// Réglages : note, lien Discord, visibilité, CP minimum, bornes, et les champs figés dès la
+    /// première candidature.
+    Settings,
+    AddSlot,
+    RemoveSlot,
+    Cancel,
+}
+
+/// Refus d'un geste de l'organisateur, dans l'ordre où les règles sont vérifiées.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventRefusal {
+    /// L'événement est annulé : plus aucune écriture, pas même une seconde annulation.
+    Closed,
+    /// L'événement est verrouillé : les créneaux ne bougent plus.
+    Locked,
+}
+
+/// Mutabilité d'AD-4, à vérifier après relecture de l'agrégat : un événement `cancelled` refuse
+/// tout ; les réglages et l'annulation valent en `open` comme en `locked` ; l'ajout et la
+/// suppression de créneau en `open` seulement.
+pub fn event_may(status: EventStatus, action: EventAction) -> Result<(), EventRefusal> {
+    match (status, action) {
+        (EventStatus::Cancelled, _) => Err(EventRefusal::Closed),
+        (EventStatus::Locked, EventAction::AddSlot | EventAction::RemoveSlot) => {
+            Err(EventRefusal::Locked)
+        }
+        (EventStatus::Open | EventStatus::Locked, _) => Ok(()),
     }
 }
 
@@ -688,6 +977,386 @@ mod tests {
                 ("note".into(), EventError::NoteInvalid),
             ]
         );
+    }
+
+    #[test]
+    fn slot_count_bounds_are_shared() {
+        assert!(!slot_count_allowed(0));
+        assert!(slot_count_allowed(1));
+        assert!(slot_count_allowed(SLOTS_MAX));
+        assert!(!slot_count_allowed(SLOTS_MAX + 1));
+    }
+
+    fn added(
+        existing: &[Timestamp],
+        duration: Option<u32>,
+        slot: NewSlot,
+    ) -> Result<ValidSlot, NewSlotError> {
+        validate_added_slot(now(), existing, duration, slot)
+    }
+
+    fn added_fields(e: Result<ValidSlot, NewSlotError>) -> Vec<(String, EventError)> {
+        match e {
+            Err(NewSlotError::Fields(f)) => f,
+            other => panic!("expected field errors, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_added_slot_takes_the_instance_duration_by_default() {
+        let existing = [at(-48), at(24)];
+        assert_eq!(
+            added(&existing, Some(60), slot(48)),
+            Ok(ValidSlot {
+                starts_at: at(48),
+                duration_min: 60
+            })
+        );
+        let mut s = slot(48);
+        s.duration_min = Some(90);
+        assert_eq!(added(&existing, Some(60), s).unwrap().duration_min, 90);
+        // Instance inconnue de la référence : la durée saisie suffit.
+        let mut s = slot(48);
+        s.duration_min = Some(45);
+        assert_eq!(added(&existing, None, s).unwrap().duration_min, 45);
+    }
+
+    #[test]
+    fn an_added_slot_follows_the_creation_rules() {
+        let existing = [at(-48), at(24)];
+        assert_eq!(
+            added_fields(added(&existing, Some(60), slot(-1))),
+            one("startsAt", EventError::SlotInPast)
+        );
+        let now_slot = NewSlot {
+            starts_at: now(),
+            duration_min: None,
+        };
+        assert_eq!(
+            added_fields(added(&existing, Some(60), now_slot)),
+            one("startsAt", EventError::SlotInPast)
+        );
+        assert_eq!(
+            added_fields(added(&existing, Some(60), slot(24))),
+            one("startsAt", EventError::SlotDuplicate)
+        );
+        for (d, ok) in [(14, false), (15, true), (720, true), (721, false)] {
+            let mut s = slot(48);
+            s.duration_min = Some(d);
+            let r = added(&existing, Some(60), s);
+            if ok {
+                assert!(r.is_ok(), "{d}");
+            } else {
+                assert_eq!(
+                    added_fields(r),
+                    one("durationMin", EventError::SlotDurationOutOfRange),
+                    "{d}"
+                );
+            }
+        }
+        // Durée de l'instance hors bornes, ou instance inconnue sans durée saisie.
+        assert_eq!(
+            added_fields(added(&existing, Some(5), slot(48))),
+            one("durationMin", EventError::SlotDurationOutOfRange)
+        );
+        assert_eq!(
+            added_fields(added(&existing, None, slot(-1))),
+            vec![
+                ("startsAt".into(), EventError::SlotInPast),
+                ("durationMin".into(), EventError::SlotDurationOutOfRange),
+            ]
+        );
+    }
+
+    #[test]
+    fn at_most_fourteen_slots_past_ones_included() {
+        let thirteen: Vec<_> = (-6..7).map(|h| at(h * 10 + 1)).collect();
+        assert_eq!(thirteen.len(), 13);
+        assert!(added(&thirteen, Some(60), slot(200)).is_ok());
+        let fourteen: Vec<_> = (-7..7).map(|h| at(h * 10 + 1)).collect();
+        assert_eq!(
+            added(&fourteen, Some(60), slot(200)),
+            Err(NewSlotError::CountOutOfRange)
+        );
+    }
+
+    fn bound(class: &str, min: u32, max: u32) -> ClassBound {
+        ClassBound {
+            class: class.into(),
+            min,
+            max,
+        }
+    }
+
+    fn current(has_candidatures: bool) -> CurrentSettings {
+        CurrentSettings {
+            instance: "raid".into(),
+            region: "r1".into(),
+            faction_scope: FactionScope::All,
+            has_candidatures,
+            class_bounds: vec![bound("c1", 0, 10), bound("c2", 1, 4)],
+        }
+    }
+
+    fn settings() -> NewSettings {
+        NewSettings {
+            instance: "raid".into(),
+            region: "r1".into(),
+            faction_scope: FactionScope::All,
+            note: String::new(),
+            discord_url: None,
+            visibility: Visibility::Listed,
+            min_cp: None,
+            class_bounds: BTreeMap::new(),
+        }
+    }
+
+    fn settings_errors(c: &CurrentSettings, i: NewSettings) -> Vec<(String, EventError)> {
+        validate_settings(&reference(), c, i).unwrap_err()
+    }
+
+    #[test]
+    fn settings_replace_every_value() {
+        let mut i = settings();
+        i.note = "Vocal prêt".into();
+        i.discord_url = Some("https://discord.gg/abc".into());
+        i.visibility = Visibility::Unlisted;
+        i.min_cp = Some(1200);
+        i.class_bounds
+            .insert("c2".into(), NewBound { min: 2, max: 3 });
+        let v = validate_settings(&reference(), &current(true), i).unwrap();
+        assert_eq!(v.note, "Vocal prêt");
+        assert_eq!(v.discord_url.as_deref(), Some("https://discord.gg/abc"));
+        assert_eq!(v.visibility, Visibility::Unlisted);
+        assert_eq!(v.min_cp, Some(1200));
+        // Une borne par ligne existante : la classe omise garde les siennes.
+        assert_eq!(v.class_bounds, vec![bound("c1", 0, 10), bound("c2", 2, 3)]);
+        // Vide ou absent : effacé.
+        let mut i = settings();
+        i.discord_url = Some(String::new());
+        let v = validate_settings(&reference(), &current(true), i).unwrap();
+        assert_eq!((v.discord_url, v.min_cp), (None, None));
+    }
+
+    #[test]
+    fn frozen_fields_once_a_candidature_exists_and_before_any_400() {
+        for (path, patch) in [
+            (
+                "instance",
+                (|i: &mut NewSettings| i.instance = "small".into()) as fn(&mut _),
+            ),
+            ("region", |i| i.region = "r_off".into()),
+            ("factionScope", |i| i.faction_scope = FactionScope::Elyos),
+        ] {
+            let mut i = settings();
+            patch(&mut i);
+            // Une erreur 400 ailleurs ne passe pas devant le refus.
+            i.note = "https://x".into();
+            assert_eq!(
+                settings_errors(&current(true), i),
+                one(path, EventError::FieldImmutable),
+                "{path}"
+            );
+        }
+        let mut i = settings();
+        i.instance = "small".into();
+        i.region = "nope".into();
+        assert_eq!(
+            settings_errors(&current(true), i),
+            vec![
+                ("instance".into(), EventError::FieldImmutable),
+                ("region".into(), EventError::FieldImmutable),
+            ]
+        );
+        // Renvoyées inchangées : elles passent.
+        assert!(validate_settings(&reference(), &current(true), settings()).is_ok());
+    }
+
+    #[test]
+    fn without_candidature_the_raid_fields_change_under_the_creation_rules() {
+        let mut i = settings();
+        i.instance = "small".into();
+        i.faction_scope = FactionScope::Asmodian;
+        i.class_bounds
+            .insert("c1".into(), NewBound { min: 0, max: 4 });
+        i.class_bounds
+            .insert("c2".into(), NewBound { min: 1, max: 4 });
+        let v = validate_settings(&reference(), &current(false), i).unwrap();
+        assert_eq!(v.instance, "small");
+        assert_eq!(v.faction_scope, FactionScope::Asmodian);
+        // Valeurs changées : existe et `enabled`.
+        let mut i = settings();
+        i.instance = "old".into();
+        assert_eq!(
+            settings_errors(&current(false), i),
+            one("instance", EventError::ReferenceUnknown)
+        );
+        let mut i = settings();
+        i.region = "r_off".into();
+        assert_eq!(
+            settings_errors(&current(false), i),
+            one("region", EventError::ReferenceUnknown)
+        );
+        // Portée confrontée à l'instance résultante.
+        let mut i = settings();
+        i.instance = "mono".into();
+        assert_eq!(
+            settings_errors(&current(false), i),
+            one("factionScope", EventError::FactionScopeNotAllowed)
+        );
+    }
+
+    #[test]
+    fn unchanged_values_are_not_checked_against_enabled() {
+        let c = CurrentSettings {
+            instance: "old".into(),
+            region: "r_off".into(),
+            ..current(true)
+        };
+        let mut i = settings();
+        i.instance = "old".into();
+        i.region = "r_off".into();
+        assert!(validate_settings(&reference(), &c, i).is_ok());
+        // Instance mono-faction et portée « all » déjà là : ni l'une ni l'autre ne change.
+        let c = CurrentSettings {
+            instance: "mono".into(),
+            ..current(true)
+        };
+        let mut i = settings();
+        i.instance = "mono".into();
+        assert!(validate_settings(&reference(), &c, i).is_ok());
+        // Instance retirée de la référence, inchangée : tolérée, sans plafond.
+        let c = CurrentSettings {
+            instance: "gone".into(),
+            ..current(true)
+        };
+        let mut i = settings();
+        i.instance = "gone".into();
+        i.class_bounds
+            .insert("c1".into(), NewBound { min: 0, max: 40 });
+        assert!(validate_settings(&reference(), &c, i).is_ok());
+    }
+
+    #[test]
+    fn settings_reuse_the_field_rules() {
+        for (patch, path, e) in [
+            (
+                (|i: &mut NewSettings| i.note = "a".repeat(281)) as fn(&mut _),
+                "note",
+                EventError::NoteInvalid,
+            ),
+            (
+                |i| i.discord_url = Some("https://evil.example/x".into()),
+                "discordUrl",
+                EventError::DiscordUrlInvalid,
+            ),
+            (
+                |i| i.min_cp = Some(-1),
+                "minCp",
+                EventError::MinCpOutOfRange,
+            ),
+            (
+                |i| i.min_cp = Some(1_000_000),
+                "minCp",
+                EventError::MinCpOutOfRange,
+            ),
+        ] {
+            let mut i = settings();
+            patch(&mut i);
+            assert_eq!(settings_errors(&current(true), i), one(path, e), "{path}");
+        }
+    }
+
+    #[test]
+    fn settings_only_update_existing_bounds_within_the_resulting_instance() {
+        for (class, min, max, path, e) in [
+            (
+                "c_new",
+                0,
+                1,
+                "classBounds.c_new",
+                EventError::ReferenceUnknown,
+            ),
+            (
+                "c1",
+                3,
+                2,
+                "classBounds.c1.min",
+                EventError::ClassBoundsInvalid,
+            ),
+            (
+                "c1",
+                -1,
+                2,
+                "classBounds.c1.min",
+                EventError::ClassBoundsInvalid,
+            ),
+            (
+                "c1",
+                0,
+                11,
+                "classBounds.c1.max",
+                EventError::ClassBoundsInvalid,
+            ),
+        ] {
+            let mut i = settings();
+            i.class_bounds.insert(class.into(), NewBound { min, max });
+            assert_eq!(
+                settings_errors(&current(true), i),
+                one(path, e),
+                "{class} {min} {max}"
+            );
+        }
+        // Une classe active de la référence sans ligne dans l'événement reste inconnue.
+        let c = CurrentSettings {
+            class_bounds: vec![bound("c1", 0, 10)],
+            ..current(true)
+        };
+        let mut i = settings();
+        i.class_bounds
+            .insert("c2".into(), NewBound { min: 0, max: 1 });
+        assert_eq!(
+            settings_errors(&c, i),
+            one("classBounds.c2", EventError::ReferenceUnknown)
+        );
+        // Instance plus petite : une ligne gardée telle quelle dépasse le nouveau plafond.
+        let mut i = settings();
+        i.instance = "small".into();
+        i.class_bounds
+            .insert("c2".into(), NewBound { min: 1, max: 4 });
+        assert_eq!(
+            settings_errors(&current(false), i),
+            one("classBounds.c1.max", EventError::ClassBoundsInvalid)
+        );
+    }
+
+    #[test]
+    fn mutability_is_exhaustive_and_in_order() {
+        use EventAction::*;
+        use EventRefusal as R;
+        use EventStatus::*;
+        // AD-4 *Mutabilité* et *États*, ligne par ligne : réglages toujours modifiables, créneaux
+        // en `open` seulement, `open|locked → cancelled`, et un événement annulé refuse tout.
+        let table = [
+            (Open, Settings, Ok(())),
+            (Open, AddSlot, Ok(())),
+            (Open, RemoveSlot, Ok(())),
+            (Open, Cancel, Ok(())),
+            (Locked, Settings, Ok(())),
+            (Locked, AddSlot, Err(R::Locked)),
+            (Locked, RemoveSlot, Err(R::Locked)),
+            (Locked, Cancel, Ok(())),
+            (Cancelled, Settings, Err(R::Closed)),
+            (Cancelled, AddSlot, Err(R::Closed)),
+            (Cancelled, RemoveSlot, Err(R::Closed)),
+            (Cancelled, Cancel, Err(R::Closed)),
+        ];
+        for (status, action, expected) in table {
+            assert_eq!(event_may(status, action), expected, "{status:?} {action:?}");
+        }
+        // Chaque couple (état, geste) figure une fois dans la table.
+        let pairs: HashSet<_> = table.iter().map(|(s, a, _)| (*s, *a)).collect();
+        assert_eq!(pairs.len(), 3 * 4);
     }
 
     #[test]

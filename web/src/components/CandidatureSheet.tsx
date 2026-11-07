@@ -22,6 +22,8 @@ interface Props {
   now: () => number;
   /** Décision en cours d'envoi, `null` sinon. */
   busy: Decision | null;
+  /** Une autre commande de la page est en vol : les décisions attendent qu'elle réponde. */
+  otherPending?: boolean;
   /** Erreur du dernier essai, déjà traduite. */
   error: string | null;
   onDecide: (decision: Decision) => void;
@@ -36,6 +38,7 @@ export function CandidatureSheet({
   reference,
   now,
   busy,
+  otherPending = false,
   error,
   onDecide,
   onClose,
@@ -95,6 +98,7 @@ export function CandidatureSheet({
   const today = new Date(now());
   const row = "flex flex-wrap items-baseline justify-between gap-x-3 border-b border-border py-2";
   const button = "min-h-tap rounded-md px-4 text-label disabled:border-border disabled:text-ink-disabled";
+  const blocked = busy !== null || otherPending;
 
   return (
     <Sheet
@@ -121,7 +125,7 @@ export function CandidatureSheet({
             <button
               ref={confirmButton}
               type="button"
-              disabled={busy !== null}
+              disabled={blocked}
               onClick={() => onDecide("rejected")}
               className={`${button} border border-danger text-danger`}
             >
@@ -221,7 +225,7 @@ export function CandidatureSheet({
               <button
                 ref={acceptButton}
                 type="button"
-                disabled={busy !== null}
+                disabled={blocked}
                 onClick={() => onDecide("accepted")}
                 className={`${button} bg-accent text-on-accent disabled:bg-surface-sunken`}
               >
@@ -232,7 +236,7 @@ export function CandidatureSheet({
               <button
                 ref={rejectButton}
                 type="button"
-                disabled={busy !== null}
+                disabled={blocked}
                 onClick={() => setConfirmStep(true)}
                 className={`${button} border border-danger text-danger`}
               >

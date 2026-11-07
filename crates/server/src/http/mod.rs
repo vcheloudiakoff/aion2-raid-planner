@@ -89,6 +89,16 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
             "/organizer/candidature-status",
             post(organizer::post_candidature_status),
         )
+        .route("/organizer/settings", post(organizer::post_settings))
+        .route("/organizer/slots", post(organizer::post_slot))
+        .route(
+            "/organizer/slot-removal",
+            post(organizer::post_slot_removal),
+        )
+        .route(
+            "/organizer/cancellation",
+            post(organizer::post_cancellation),
+        )
         .route_layer(middleware::from_fn_with_state(
             Guard::new(&state.limits, RouteClass::Write),
             limits::enforce,

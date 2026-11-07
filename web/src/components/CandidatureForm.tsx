@@ -11,7 +11,7 @@ import { labelOf } from "../api/reference";
 import type { Faction, GameClass, PublicEvent, ReferenceSet, Server, SubmitCandidature } from "../api/types";
 import { t, useLang, type MessageKey } from "../i18n";
 import { formatDay, formatSlot } from "../lib/time";
-import { errorText } from "../pages/NewEvent";
+import { errorText } from "../lib/form";
 import { FactionDot, roleLabel } from "./EventSummary";
 
 export const PSEUDO_MAX = 16;

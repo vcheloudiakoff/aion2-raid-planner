@@ -25,7 +25,7 @@ import { FactionDot, Summary, roleLabel } from "../components/EventSummary";
 import { t, useLang, type MessageKey } from "../i18n";
 import { formatDay, formatSlot } from "../lib/time";
 import { DeadLink, GONE, REFRESH_MS } from "./EventPage";
-import { errorText } from "./NewEvent";
+import { errorText } from "../lib/form";
 
 /** État de navigation posé par le formulaire de candidature après le succès. */
 export interface ParticipantState {

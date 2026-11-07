@@ -44,6 +44,17 @@ export const reference: ReferenceSet = {
       label: { en: "Mono" },
       enabled: true,
     },
+    {
+      id: "i_off",
+      kind: "sanctuary",
+      parties: 2,
+      partySize: 5,
+      durationMin: 75,
+      crossFaction: true,
+      roomLabel: "OFF",
+      label: { en: "Retired Instance", fr: "Instance retirée" },
+      enabled: false,
+    },
   ],
   classes: [
     { id: "c1", role: "healer", defaultMin: 0, defaultMax: 10, label: { en: "Healer Class", fr: "Classe Soin" }, enabled: true },

@@ -387,7 +387,7 @@ describe("edit", () => {
     await flush();
     expect(q("form")).toBeNull();
     expect(q('[data-testid="action-error"]')!.textContent).toBe(
-      "Le raid est verrouillé : tu ne peux plus modifier ta candidature.",
+      "Le raid est verrouillé : ce changement n'est plus possible.",
     );
     expect(reads(calls)).toBe(2);
     expect(button("Modifier")).toBeNull();

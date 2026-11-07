@@ -226,3 +226,28 @@ export interface SetCandidatureStatus {
   candidatureId: string;
   status: Decision;
 }
+
+/** Créneau saisi : `startsAt` en UTC, forme `YYYY-MM-DDTHH:MM:SSZ` ; `durationMin` absente = durée
+ * de l'instance. Corps de `POST /api/organizer/slots`. */
+export interface NewSlot {
+  startsAt: string;
+  durationMin?: number;
+}
+
+/** Corps de `POST /api/organizer/settings` : il remplace tous les réglages. `discordUrl` et `minCp`
+ * absents effacent la valeur ; une classe omise de `classBounds` garde ses bornes. */
+export interface UpdateEventSettings {
+  instance: string;
+  region: string;
+  factionScope: FactionScope;
+  note: string;
+  discordUrl?: string;
+  visibility: Visibility;
+  minCp?: number;
+  classBounds: Record<string, { min: number; max: number }>;
+}
+
+/** Corps de `POST /api/organizer/slot-removal`. */
+export interface SlotRemoval {
+  slotId: string;
+}
