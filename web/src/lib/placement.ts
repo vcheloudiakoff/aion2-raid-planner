@@ -6,7 +6,19 @@
 // jamais à deux places : chaque geste la retire d'abord de l'ancienne (l'interface déplace au lieu de
 // dupliquer).
 
-import type { OrganizerEvent, PlacementEntry } from "../api/types";
+import type { OrganizerEvent, OrganizerGroup, PlacementEntry } from "../api/types";
+
+export interface NumberedGroup {
+  /** 1 pour « G1 ». */
+  n: number;
+  group: OrganizerGroup;
+}
+
+/** Groupes retenus, numérotés « G1… » dans l'ordre reçu (début de créneau puis occurrence) : un
+ * groupe en sommeil n'a pas de numéro. Puces de Composition, cartes de Salle, message Discord. */
+export function retainedGroups(view: OrganizerEvent): NumberedGroup[] {
+  return view.groups.filter((g) => g.retained).map((group, i) => ({ n: i + 1, group }));
+}
 
 /** Placement d'un groupe : titulaires par slot (`"party.index"`), banc ordonné. */
 export interface GroupPlacement {

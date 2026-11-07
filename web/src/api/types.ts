@@ -325,3 +325,9 @@ export type PlacementEntry =
 export interface ApplyPlacement {
   placements: PlacementEntry[];
 }
+
+/** Corps de `POST /api/organizer/room-name` : le groupe retenu à renommer. Le nom est composé par le
+ * serveur, jamais ici (AD-18). */
+export interface RegenerateRoomName {
+  groupId: string;
+}

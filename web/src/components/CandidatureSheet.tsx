@@ -12,7 +12,8 @@ import { t, useLang } from "../i18n";
 import { formatDay, formatSlot } from "../lib/time";
 import { CopyChip } from "./CopyChip";
 import { DuplicateBadge, StatusBadge } from "./CandidatureRow";
-import { FactionDot, roleLabel } from "./EventSummary";
+import { roleLabel } from "../lib/labels";
+import { FactionDot } from "./EventSummary";
 import { Sheet } from "./Sheet";
 
 interface Props {

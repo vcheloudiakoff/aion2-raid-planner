@@ -603,6 +603,9 @@ pub enum EventAction {
     /// Placement des groupes retenus (`apply_placement`), en `locked` seulement ; un créneau
     /// commencé ne l'empêche pas.
     Place,
+    /// Nouveau nom de salle d'un groupe retenu (`regenerate_room_name`), même règle que
+    /// [`EventAction::Place`] : en `locked` seulement, même si le créneau a commencé.
+    RegenerateRoom,
 }
 
 /// Refus d'un geste de l'organisateur, dans l'ordre où les règles sont vérifiées.
@@ -618,8 +621,8 @@ pub enum EventRefusal {
 
 /// Mutabilité d'AD-4, à vérifier après relecture de l'agrégat : un événement `cancelled` refuse
 /// tout ; les réglages et l'annulation valent en `open` comme en `locked` ; l'ajout et la
-/// suppression de créneau et le verrouillage en `open` seulement ; le déverrouillage et le placement
-/// en `locked` seulement.
+/// suppression de créneau et le verrouillage en `open` seulement ; le déverrouillage, le placement
+/// et la régénération du nom de salle en `locked` seulement.
 pub fn event_may(status: EventStatus, action: EventAction) -> Result<(), EventRefusal> {
     match (status, action) {
         (EventStatus::Cancelled, _) => Err(EventRefusal::Closed),
@@ -627,9 +630,10 @@ pub fn event_may(status: EventStatus, action: EventAction) -> Result<(), EventRe
             EventStatus::Locked,
             EventAction::AddSlot | EventAction::RemoveSlot | EventAction::Lock,
         ) => Err(EventRefusal::Locked),
-        (EventStatus::Open, EventAction::Unlock | EventAction::Place) => {
-            Err(EventRefusal::NotLocked)
-        }
+        (
+            EventStatus::Open,
+            EventAction::Unlock | EventAction::Place | EventAction::RegenerateRoom,
+        ) => Err(EventRefusal::NotLocked),
         (EventStatus::Open | EventStatus::Locked, _) => Ok(()),
     }
 }
@@ -1470,7 +1474,7 @@ mod tests {
         // AD-4 *Mutabilité* et *États*, ligne par ligne : réglages toujours modifiables, créneaux
         // en `open` seulement, `open|locked → cancelled`, et un événement annulé refuse tout.
         // `open → locked` par le verrouillage, `locked → open` par le déverrouillage, et le placement
-        // en `locked` seulement.
+        // et la régénération du nom de salle en `locked` seulement.
         let table = [
             (Open, Settings, Ok(())),
             (Open, AddSlot, Ok(())),
@@ -1479,6 +1483,7 @@ mod tests {
             (Open, Lock, Ok(())),
             (Open, Unlock, Err(R::NotLocked)),
             (Open, Place, Err(R::NotLocked)),
+            (Open, RegenerateRoom, Err(R::NotLocked)),
             (Locked, Settings, Ok(())),
             (Locked, AddSlot, Err(R::Locked)),
             (Locked, RemoveSlot, Err(R::Locked)),
@@ -1486,6 +1491,7 @@ mod tests {
             (Locked, Lock, Err(R::Locked)),
             (Locked, Unlock, Ok(())),
             (Locked, Place, Ok(())),
+            (Locked, RegenerateRoom, Ok(())),
             (Cancelled, Settings, Err(R::Closed)),
             (Cancelled, AddSlot, Err(R::Closed)),
             (Cancelled, RemoveSlot, Err(R::Closed)),
@@ -1493,13 +1499,14 @@ mod tests {
             (Cancelled, Lock, Err(R::Closed)),
             (Cancelled, Unlock, Err(R::Closed)),
             (Cancelled, Place, Err(R::Closed)),
+            (Cancelled, RegenerateRoom, Err(R::Closed)),
         ];
         for (status, action, expected) in table {
             assert_eq!(event_may(status, action), expected, "{status:?} {action:?}");
         }
         // Chaque couple (état, geste) figure une fois dans la table.
         let pairs: HashSet<_> = table.iter().map(|(s, a, _)| (*s, *a)).collect();
-        assert_eq!(pairs.len(), 3 * 7);
+        assert_eq!(pairs.len(), 3 * 8);
     }
 
     fn ids(list: &[&str]) -> Vec<String> {

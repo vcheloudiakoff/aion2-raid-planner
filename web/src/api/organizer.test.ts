@@ -6,6 +6,7 @@ import {
   cancelEvent,
   getOrganizerView,
   lockEvent,
+  regenerateRoomName,
   removeSlot,
   setCandidatureStatus,
   unlockEvent,
@@ -122,5 +123,15 @@ describe("organizer api", () => {
     for (const id of [SECRET, C, D, G]) expect(calls[0].url).not.toContain(id);
     expect(String(calls[0].init?.body)).not.toContain(SECRET);
     expect(JSON.parse(String(calls[0].init?.body))).toEqual({ placements });
+  });
+
+  it("asks for a new room name with the group in the body, never in the URL, the secret in the header only", async () => {
+    const calls = serve();
+    const G = "g".repeat(22);
+    await regenerateRoomName(SECRET, G);
+    expect(calls.map((c) => [c.init?.method, c.url])).toEqual([["POST", "/api/organizer/room-name"]]);
+    expect(headers(calls[0])["X-Link-Secret"]).toBe(SECRET);
+    for (const id of [SECRET, G]) expect(calls[0].url).not.toContain(id);
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ groupId: G });
   });
 });

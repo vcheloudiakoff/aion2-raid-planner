@@ -6,6 +6,7 @@
 import { labelOf } from "../api/reference";
 import type { Faction, PublicEvent, ReferenceSet } from "../api/types";
 import { t, useLang } from "../i18n";
+import { instanceLabel, roleLabel } from "../lib/labels";
 import { formatDay, formatSlot, timeZoneLabel } from "../lib/time";
 
 export function FactionDot({ faction }: { faction: Faction }) {
@@ -17,16 +18,10 @@ export function FactionDot({ faction }: { faction: Faction }) {
   );
 }
 
-export function roleLabel(reference: ReferenceSet | null, role: string, lang: string): string {
-  const r = reference?.roles.find((x) => x.id === role);
-  return r ? labelOf(r.label, lang) : role;
-}
-
 /** Titre d'écran d'un événement : l'instance et le jour de son premier créneau à venir, sinon du
  * dernier. Libellé de la référence, repli sur l'id (AD-6). */
 export function eventTitle(event: PublicEvent, reference: ReferenceSet | null, lang: string, now: () => number): string {
-  const instance = reference?.instances.find((i) => i.id === event.instance);
-  const name = instance ? labelOf(instance.label, lang) : event.instance;
+  const name = instanceLabel(reference, event.instance, lang);
   const first = event.slots.find((s) => Date.parse(s.startsAt) > now()) ?? event.slots[event.slots.length - 1];
   return first ? `${name} · ${formatDay(first.startsAt, lang, new Date(now()))}` : name;
 }

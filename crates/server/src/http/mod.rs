@@ -102,6 +102,7 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
         .route("/organizer/lock", post(organizer::post_lock))
         .route("/organizer/unlock", post(organizer::post_unlock))
         .route("/organizer/placement", post(organizer::post_placement))
+        .route("/organizer/room-name", post(organizer::post_room_name))
         .route_layer(middleware::from_fn_with_state(
             Guard::new(&state.limits, RouteClass::Write),
             limits::enforce,

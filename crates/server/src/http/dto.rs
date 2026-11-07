@@ -618,6 +618,14 @@ pub struct LockEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Unlock {}
 
+/// Corps de `POST /api/organizer/room-name` : le groupe à renommer, cherché par la commande parmi
+/// les groupes retenus de l'événement du lien, jamais ailleurs.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegenerateRoomName {
+    pub group_id: String,
+}
+
 /// Corps de `POST /api/organizer/placement` : le placement complet des groupes retenus, qui
 /// remplace l'actuel. Chaque id vise une candidature ou un groupe que la commande cherche dans
 /// l'événement du lien, jamais ailleurs.

@@ -6,7 +6,6 @@
 
 mod common;
 
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use axum::http::{Method, StatusCode};
@@ -17,7 +16,7 @@ use serde_json::{Value, json};
 use server::app::AppState;
 use server::config::Config;
 use server::infra::clock::FixedClock;
-use server::infra::ids::{DeterministicIdGenerator, IdGenerator, NONCE_BYTES, PublicId, Secret};
+use server::infra::ids::{DeterministicIdGenerator, IdGenerator};
 use server::infra::reference::ReferenceStore;
 
 const VIEW: &str = "/api/organizer";
@@ -25,43 +24,6 @@ const LOCK: &str = "/api/organizer/lock";
 const UNLOCK: &str = "/api/organizer/unlock";
 const REMOVAL: &str = "/api/organizer/slot-removal";
 const STATUS: &str = "/api/organizer/candidature-status";
-
-/// Générateur déterministe dont les codes de salle sortent d'abord d'une liste scriptée.
-#[derive(Default)]
-struct Scripted {
-    inner: DeterministicIdGenerator,
-    codes: Mutex<VecDeque<&'static str>>,
-}
-
-impl Scripted {
-    fn with(codes: &[&'static str]) -> Self {
-        Self {
-            inner: DeterministicIdGenerator::new(),
-            codes: Mutex::new(codes.iter().copied().collect()),
-        }
-    }
-}
-
-impl IdGenerator for Scripted {
-    fn public_id(&self) -> PublicId {
-        self.inner.public_id()
-    }
-
-    fn secret(&self) -> Secret {
-        self.inner.secret()
-    }
-
-    fn nonce(&self) -> [u8; NONCE_BYTES] {
-        self.inner.nonce()
-    }
-
-    fn room_code(&self) -> String {
-        match self.codes.lock().unwrap().pop_front() {
-            Some(code) => code.to_owned(),
-            None => self.inner.room_code(),
-        }
-    }
-}
 
 /// Référence des tests de candidature, plus une instance retirée (`retired`, 1 × 4, `OLD`).
 fn test_reference() -> ReferenceSet {

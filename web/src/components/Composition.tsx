@@ -28,6 +28,7 @@ import {
   occupant,
   placeAt,
   placementOf,
+  retainedGroups,
   sameSeat,
   slotKey,
   swapSeats,
@@ -39,8 +40,8 @@ import {
 } from "../lib/placement";
 import { formatSlot } from "../lib/time";
 import { ConfirmSheet } from "./ConfirmSheet";
-import { roleLabel } from "./EventSummary";
-import { retainedGroups } from "./GroupList";
+import { roleLabel } from "../lib/labels";
+import { SleepingGroups } from "./SleepingGroups";
 import { ReserveSheet } from "./ReserveSheet";
 import { RoomSlot, type SlotPerson } from "./RoomSlot";
 import { SlotActions } from "./SlotActions";
@@ -171,7 +172,6 @@ export function Composition({
   const lang = useLang();
   const ids = useId();
   const groups = retainedGroups(view);
-  const sleeping = view.groups.length - groups.length;
   const [picked, setPicked] = useState<string | null>(null);
   const [sheet, setSheet] = useState<OpenSheet>(null);
   const trigger = useRef<HTMLElement | null>(null);
@@ -493,11 +493,7 @@ export function Composition({
         </button>
       </section>
 
-      {sleeping > 0 && (
-        <p data-testid="composition-sleeping" className="mt-4 text-meta text-ink-secondary">
-          {t(sleeping === 1 ? "groups.sleeping.one" : "groups.sleeping.other", { count: sleeping })}
-        </p>
-      )}
+      <SleepingGroups view={view} testId="composition" />
 
       {/* Hors brouillon, la barre est vide : « Composer automatiquement » y viendra (epic 4). */}
       {bar}

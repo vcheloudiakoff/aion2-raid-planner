@@ -23,19 +23,16 @@ use domain::event::{
     EventAction, EventStatus, ExistingGroup, LockError, event_may, lock_plan, validate_lock,
 };
 use domain::reference::ReferenceSet;
-use domain::room::compose;
-use sqlx::{Connection, SqliteConnection};
+use sqlx::Connection;
 
 use crate::app::AppState;
 use crate::app::commands::EventWriteError as E;
+use crate::app::commands::room_name::free_room_name;
 use crate::app::queries::organizer_view;
 use crate::http::dto::OrganizerEvent;
 use crate::http::errors::{Code, Problem};
 use crate::infra::events;
 use crate::infra::groups::{self, NewGroup};
-
-/// Essais de nom de salle par groupe neuf, le premier compris.
-pub const ROOM_NAME_ATTEMPTS: usize = 5;
 
 /// `event_id` vient de la ligne du lien organisateur ; `slot_ids` du corps, donc vérifiés ici.
 pub async fn lock_event(
@@ -117,7 +114,7 @@ async fn write(
         groups::set_retained(&mut tx, event_id, id, false).await?;
     }
     for entry in &plan.create {
-        let room_name = free_room_name(state, &mut tx, &instance.room_label).await?;
+        let room_name = free_room_name(state, &mut tx, &instance.room_label, None).await?;
         let id = state.ids.public_id();
         let group = NewGroup {
             id: id.as_str(),
@@ -136,24 +133,4 @@ async fn write(
         .ok_or_else(|| E::refused(Code::AuthNotFound))?;
     tx.commit().await?;
     Ok((view, plan.create.len()))
-}
-
-/// Nom de salle libre parmi tous les groupes (index unique global) : un code neuf par essai,
-/// [`ROOM_NAME_ATTEMPTS`] essais au plus. Le nom n'est jamais journalisé.
-async fn free_room_name(
-    state: &AppState,
-    conn: &mut SqliteConnection,
-    room_label: &str,
-) -> Result<String, E> {
-    for _ in 0..ROOM_NAME_ATTEMPTS {
-        let name = compose(
-            &state.room_name_template,
-            room_label,
-            &state.ids.room_code(),
-        );
-        if !groups::room_name_taken(conn, &name).await? {
-            return Ok(name);
-        }
-    }
-    Err(E::Internal("room name collisions"))
 }

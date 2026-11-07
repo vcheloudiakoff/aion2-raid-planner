@@ -256,6 +256,26 @@ describe("composition tab", () => {
     expect(slot(1, 1).textContent).toContain("Kael[SE]");
   });
 
+  it("keeps placement.unknown_group a structural error here: no state refusal, no extra read", async () => {
+    const calls = serve(
+      () => json(locked()),
+      () => problem(400, "placement.unknown_group", { "placements.0.groupId": "placement.unknown_group" }),
+    );
+    await render();
+    await openComposition();
+    placeKael();
+    const before = reads(calls);
+    await press(q('[data-testid="composition-save"]'));
+    expect(posts(calls)).toHaveLength(1);
+    expect(q('[data-testid="composition-error"]')!.textContent).toBe(
+      "Un groupe n'est plus retenu : recharge les données.",
+    );
+    expect(q('[data-testid="action-error"]')).toBeNull();
+    expect(reads(calls)).toBe(before);
+    expect(bar()).not.toBeNull();
+    expect(slot(1, 1).textContent).toContain("Kael[SE]");
+  });
+
   it("keeps the draft when the organizer switches tabs", async () => {
     serve(() => json(locked()));
     await render();

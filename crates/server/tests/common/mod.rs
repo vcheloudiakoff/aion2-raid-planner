@@ -2,8 +2,9 @@
 
 pub mod candidatures;
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::Body;
@@ -12,7 +13,7 @@ use rust_embed::RustEmbed;
 use server::app::AppState;
 use server::config::Config;
 use server::infra::clock::FixedClock;
-use server::infra::ids::DeterministicIdGenerator;
+use server::infra::ids::{DeterministicIdGenerator, IdGenerator, NONCE_BYTES, PublicId, Secret};
 use server::infra::reference::{self, ReferenceStore};
 use server::infra::sqlite::{self, Db};
 use tower::ServiceExt;
@@ -227,5 +228,43 @@ pub fn assert_problem(res: &Response<Body>, body: &str, code: &str, ctx: &str) {
         );
     } else {
         assert!(retry.is_empty(), "{ctx}: no Retry-After");
+    }
+}
+
+/// Générateur déterministe dont les codes de salle sortent d'abord d'une liste scriptée (collisions
+/// de noms de salle, stories 3-2 et 3-4).
+#[derive(Default)]
+pub struct Scripted {
+    inner: DeterministicIdGenerator,
+    codes: Mutex<VecDeque<&'static str>>,
+}
+
+impl Scripted {
+    pub fn with(codes: &[&'static str]) -> Self {
+        Self {
+            inner: DeterministicIdGenerator::new(),
+            codes: Mutex::new(codes.iter().copied().collect()),
+        }
+    }
+}
+
+impl IdGenerator for Scripted {
+    fn public_id(&self) -> PublicId {
+        self.inner.public_id()
+    }
+
+    fn secret(&self) -> Secret {
+        self.inner.secret()
+    }
+
+    fn nonce(&self) -> [u8; NONCE_BYTES] {
+        self.inner.nonce()
+    }
+
+    fn room_code(&self) -> String {
+        match self.codes.lock().unwrap().pop_front() {
+            Some(code) => code.to_owned(),
+            None => self.inner.room_code(),
+        }
     }
 }

@@ -14,6 +14,8 @@ export interface ConfirmSheetProps {
   /** Libellé pendant l'envoi. */
   busyLabel: string;
   busy?: boolean;
+  /** Le bouton du verbe est désactivé (une autre commande est en vol), sans changer de libellé. */
+  confirmDisabled?: boolean;
   /** Erreur du dernier essai, déjà traduite. */
   error?: string | null;
   onConfirm: () => void;
@@ -29,6 +31,7 @@ export function ConfirmSheet({
   cancelLabel,
   busyLabel,
   busy = false,
+  confirmDisabled = false,
   error,
   onConfirm,
   onClose,
@@ -54,7 +57,7 @@ export function ConfirmSheet({
         <button
           type="button"
           onClick={onConfirm}
-          disabled={busy}
+          disabled={busy || confirmDisabled}
           className="min-h-tap rounded-md border border-danger px-4 text-label text-danger disabled:border-border disabled:text-ink-disabled"
         >
           {busy ? busyLabel : confirmLabel}

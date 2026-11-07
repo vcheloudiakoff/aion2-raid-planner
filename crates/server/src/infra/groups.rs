@@ -122,6 +122,27 @@ pub async fn set_retained(
     Ok(())
 }
 
+/// Pose un nouveau nom de salle sur un groupe de l'événement (`regenerate_room_name`, seule autre
+/// écriture du nom après `insert`, AD-18) ; rien d'autre ne change. Une ligne exactement : sinon
+/// `RowNotFound`, et la transaction de la commande n'est pas validée.
+pub async fn set_room_name(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+    group_id: &str,
+    room_name: &str,
+) -> Result<(), sqlx::Error> {
+    let done = sqlx::query("UPDATE groups SET room_name = ? WHERE id = ? AND event_id = ?")
+        .bind(room_name)
+        .bind(group_id)
+        .bind(event_id)
+        .execute(&mut *conn)
+        .await?;
+    if done.rows_affected() != 1 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+    Ok(())
+}
+
 /// Retire le placement d'une candidature, s'il existe : au retrait et au refus, dans la même
 /// transaction (exception nommée à la propriété du placement, AD-4).
 pub async fn delete_assignment(

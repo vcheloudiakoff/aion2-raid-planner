@@ -1,5 +1,5 @@
 // Vue organisateur (CAP-5), sous le lien `/o/<secret>` : lecture, tri des candidatures, réglages,
-// créneaux, annulation, verrouillage, déverrouillage et placement. Le secret part en en-tête
+// créneaux, annulation, verrouillage, déverrouillage, placement et nom de salle. Le secret part en en-tête
 // seulement, jamais dans l'URL ni le corps ; les ids (candidature, créneau, groupe) vont dans le corps
 // (AD-3). Pas de jeton de formulaire : le secret
 // organisateur suffit (AD-7). Chaque commande rend la vue à jour.
@@ -12,6 +12,7 @@ import type {
   NewSlot,
   OrganizerEvent,
   PlacementEntry,
+  RegenerateRoomName,
   SetCandidatureStatus,
   SlotRemoval,
   UpdateEventSettings,
@@ -26,6 +27,7 @@ export const CANCELLATION_URL = `${ORGANIZER_URL}/cancellation`;
 export const LOCK_URL = `${ORGANIZER_URL}/lock`;
 export const UNLOCK_URL = `${ORGANIZER_URL}/unlock`;
 export const PLACEMENT_URL = `${ORGANIZER_URL}/placement`;
+export const ROOM_NAME_URL = `${ORGANIZER_URL}/room-name`;
 
 export function getOrganizerView(secret: string): Promise<OrganizerEvent> {
   return getJson<OrganizerEvent>(ORGANIZER_URL, { linkSecret: secret });
@@ -73,4 +75,11 @@ export function unlockEvent(secret: string): Promise<OrganizerEvent> {
 export function applyPlacement(secret: string, placements: PlacementEntry[]): Promise<OrganizerEvent> {
   const body: ApplyPlacement = { placements };
   return postJson<OrganizerEvent>(PLACEMENT_URL, body, { linkSecret: secret });
+}
+
+/** Nouveau nom de salle pour un groupe retenu (événement `locked` seulement), composé par le
+ * serveur ; le nom actuel ne revient jamais. */
+export function regenerateRoomName(secret: string, groupId: string): Promise<OrganizerEvent> {
+  const body: RegenerateRoomName = { groupId };
+  return postJson<OrganizerEvent>(ROOM_NAME_URL, body, { linkSecret: secret });
 }

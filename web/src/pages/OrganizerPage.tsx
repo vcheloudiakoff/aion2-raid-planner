@@ -9,7 +9,11 @@
 // part, avec un squelette en attendant) place titulaires et banc des groupes retenus : le brouillon
 // vit ici, pour survivre à un changement d'onglet, avec sa vue de base pour le bandeau « N
 // candidatures ont changé » ; une relecture ne l'écrase jamais, « Enregistrer » envoie le placement
-// complet, un refus le garde. Salle liste les groupes retenus (contenu en story 3-4). Réglages
+// complet, un refus le garde. Salle (`Room`, chargée à la demande dans son propre chunk) montre une
+// carte par groupe retenu (nom à copier, recette, slots et banc) et « Copier le message Discord »,
+// construit côté client avec l'origine du navigateur, sans secret, et signale un brouillon de
+// composition non enregistré ; « Régénérer le nom » passe par `command`, et un groupe qui n'est plus
+// retenu y est un refus d'état. Réglages
 // commence par « Ton lien d'organisateur » à copier pour changer d'appareil, puis `EventSettings`
 // règle l'événement, ses créneaux et son annulation et propose
 // « Dupliquer » ; raid annulé, l'onglet est en lecture seule. Le lien est gardé sur cet appareil à la
@@ -41,6 +45,7 @@ import {
   cancelEvent,
   getOrganizerView,
   lockEvent,
+  regenerateRoomName,
   removeSlot,
   setCandidatureStatus,
   unlockEvent,
@@ -59,16 +64,18 @@ import {
   type SettingsCommand,
 } from "../components/EventSettings";
 import { eventTitle } from "../components/EventSummary";
-import { GroupList } from "../components/GroupList";
 import { LockSheet } from "../components/LockSheet";
 import { t, useLang } from "../i18n";
 import { errorText, type Fields } from "../lib/form";
 import { bodyOf, changedCount, type Draft, type Placement, type Seat } from "../lib/placement";
 import type { SeatError } from "../components/Composition";
+import type { RegenerateOutcome } from "../components/Room";
 import { REFRESH_MS } from "./EventPage";
 
 /** Onglet Composition, chargé à la demande : rien de ce module n'est importé statiquement ici. */
 const Composition = lazy(() => import("../components/Composition"));
+/** Onglet Salle, chargé à la demande de la même façon. */
+const Room = lazy(() => import("../components/Room"));
 
 /** Durée du liseré or d'une nouvelle candidature. */
 export const FRESH_MS = 3000;
@@ -85,9 +92,13 @@ const STATE_CODES = new Set([
   "event.no_upcoming_slot",
 ]);
 
-/** Commande en vol : une décision de la feuille, un verrouillage, un placement, ou un geste de
- * l'onglet Réglages. */
-type Pending = Decision | SettingsCommand | "lock" | "placement";
+/** Refus d'état propre à « Régénérer le nom » : le groupe n'est plus retenu (ou plus là). Ailleurs,
+ * `placement.unknown_group` est un refus structurel du brouillon, qui le garde. */
+const ROOM_STATE_CODES: ReadonlySet<string> = new Set(["placement.unknown_group"]);
+
+/** Commande en vol : une décision de la feuille, un verrouillage, un placement, un nouveau nom de
+ * salle, ou un geste de l'onglet Réglages. */
+type Pending = Decision | SettingsCommand | "lock" | "placement" | "roomName";
 
 type Tab = "candidatures" | "availability" | "composition" | "room" | "settings";
 const OPEN_TABS: readonly Tab[] = ["candidatures", "availability", "settings"];
@@ -284,8 +295,12 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
   /** Lance une commande, une à la fois : la relecture périodique attend sa réponse, et la vue rendue
    * s'applique si aucune plus récente ne l'a précédée. Un lien mort ou un refus d'état est traité ici
    * (message dans la page, feuille fermée, vue relue) ; les autres refus reviennent à l'appelant, qui
-   * les montre près du geste. */
-  async function command(kind: Pending, send: () => Promise<OrganizerEvent>): Promise<CommandOutcome> {
+   * les montre près du geste. `stateCodes` : codes que ce geste traite en plus comme refus d'état. */
+  async function command(
+    kind: Pending,
+    send: () => Promise<OrganizerEvent>,
+    stateCodes?: ReadonlySet<string>,
+  ): Promise<CommandOutcome> {
     if (busyRef.current) return { ok: false, handled: true, fields: {} };
     const n = ++issued.current;
     busyRef.current = true;
@@ -305,7 +320,7 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
         if (isDeadLinkCode(api.code)) forgetSecret(secret);
         return { ok: false, handled: true, code: api.code, fields: {} };
       }
-      if (api.code && STATE_CODES.has(api.code)) {
+      if (api.code && (STATE_CODES.has(api.code) || stateCodes?.has(api.code))) {
         // L'état a changé (annulé, verrouillé, retirée, hors du raid) : on ferme et on relit.
         setActionError(errorText(api.code));
         setOpenId(null);
@@ -356,6 +371,20 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
     // Réseau, quota, liste refusée : la feuille reste ouverte avec l'erreur.
     if (!outcome.handled) setLockError(errorText(outcome.code));
     return outcome.fields;
+  }
+
+  /** « Régénérer le nom » : la confirmation se ferme sur une réussite ou un refus d'état (dit dans la
+   * page, vue relue ; un groupe qui n'est plus retenu a son propre texte) ; elle reste ouverte avec
+   * l'erreur (réseau, quota), ou sans rien dire si une autre commande est en vol. */
+  async function regenerateRoom(groupId: string): Promise<RegenerateOutcome> {
+    if (busyRef.current) return { close: false, error: null };
+    const outcome = await command("roomName", () => regenerateRoomName(secret, groupId), ROOM_STATE_CODES);
+    if (outcome.ok) return { close: true };
+    if (outcome.handled) {
+      if (outcome.code === "placement.unknown_group") setActionError(t("room.unknownGroup"));
+      return { close: true };
+    }
+    return { close: false, error: errorText(outcome.code) };
   }
 
   /** Premier geste : le brouillon commence sur la vue affichée, sa base pour le bandeau. Un geste
@@ -595,7 +624,25 @@ export function OrganizerPage({ reference, origin = window.location.origin, deps
             />
           </Suspense>
         ) : shownTab === "room" ? (
-          <GroupList view={view} title={t("organizer.tab.room")} testId="room" />
+          <Suspense
+            fallback={
+              <div data-testid="room-loading" aria-busy="true" className="mt-4">
+                <div className="h-tap rounded-md bg-surface-sunken" />
+                <div className="mt-4 h-40 rounded-md bg-surface-sunken" />
+              </div>
+            }
+          >
+            <Room
+              view={view}
+              reference={reference}
+              origin={origin}
+              onRegenerate={regenerateRoom}
+              regenerating={pending === "roomName"}
+              busy={pending !== null}
+              draft={draft !== null}
+              fallbackFocus={heading}
+            />
+          </Suspense>
         ) : (
           <>
             {/* Changer d'appareil : copier ce lien, le coller ailleurs (EXPERIENCE.md *Liens et appareils*). */}

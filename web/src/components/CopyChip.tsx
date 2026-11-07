@@ -1,6 +1,8 @@
 // Puce à copier (EXPERIENCE.md, Component Patterns) : toute la puce est la cible. Un toucher copie
 // et affiche « Copié » 1,5 s ; si l'API presse-papiers manque ou échoue, le texte est sélectionné pour
 // une copie à la main. Aucun effet de bord serveur. Le texte n'est jamais tronqué au milieu.
+// Variante `display` : le nom de salle de l'onglet Salle, seul très gros texte de l'outil (DESIGN.md
+// *Typography*) ; sinon `mono`.
 
 import { useEffect, useRef, useState } from "react";
 import { t, useLang } from "../i18n";
@@ -13,9 +15,16 @@ interface Props {
   label: string;
   /** Appelé après une copie réussie seulement. */
   onCopied?: () => void;
+  /** Typographie du texte copié : `mono` par défaut, `display` pour le nom de salle. */
+  variant?: "mono" | "display";
 }
 
-export function CopyChip({ value, label, onCopied }: Props) {
+const TEXT_CLASS = {
+  mono: "font-mono text-[15px] leading-[1.4] font-medium",
+  display: "text-display",
+} as const;
+
+export function CopyChip({ value, label, onCopied, variant = "mono" }: Props) {
   useLang();
   const [toast, setToast] = useState(0);
   const text = useRef<HTMLSpanElement>(null);
@@ -45,7 +54,8 @@ export function CopyChip({ value, label, onCopied }: Props) {
         type="button"
         onClick={copy}
         aria-label={t("copy.action", { label })}
-        className="flex min-h-tap w-full items-center gap-2 rounded-sm bg-surface-sunken px-3 py-2 text-left font-mono text-[15px] leading-[1.4] font-medium text-ink-primary"
+        data-variant={variant}
+        className={`flex min-h-tap w-full items-center gap-2 rounded-sm bg-surface-sunken px-3 py-2 text-left text-ink-primary ${TEXT_CLASS[variant]}`}
       >
         <span ref={text} className="min-w-0 flex-1 break-all select-all">
           {value}
@@ -55,14 +65,19 @@ export function CopyChip({ value, label, onCopied }: Props) {
           <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
         </svg>
       </button>
-      {toast > 0 && (
-        <p
-          role="status"
-          className="fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-md border border-border bg-surface-raised px-4 py-2 text-label text-ink-primary shadow-[0_8px_24px_rgb(0_0_0/0.35)]"
-        >
-          {t("copy.done")}
-        </p>
-      )}
+      {toast > 0 && <CopiedToast />}
     </>
+  );
+}
+
+/** Toast « Copié », en bas au-dessus du bouton principal ; l'appelant le retire après `TOAST_MS`. */
+export function CopiedToast() {
+  return (
+    <p
+      role="status"
+      className="fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-md border border-border bg-surface-raised px-4 py-2 text-label text-ink-primary shadow-[0_8px_24px_rgb(0_0_0/0.35)]"
+    >
+      {t("copy.done")}
+    </p>
   );
 }

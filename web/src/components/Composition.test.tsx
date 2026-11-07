@@ -144,6 +144,19 @@ describe("composition", () => {
     expect(text(q('[data-testid="composition-state"]'))).toBe("1 / 10 · manque 1 Soin");
   });
 
+  it("counts the sleeping groups under the retained ones, and says nothing without any", () => {
+    render();
+    expect(q('[data-testid="composition-sleeping"]')).toBeNull();
+    m.unmount();
+    const view = locked();
+    render({ ...view, groups: [...view.groups, organizerGroup({ id: "zz", retained: false })] });
+    expect(text(q('[data-testid="composition-sleeping"]'))).toBe(
+      "1 groupe en sommeil, repris s'il est reverrouillé.",
+    );
+    // Le groupe en sommeil n'a pas de puce.
+    expect(chip("zz")).toBeNull();
+  });
+
   it("lists the reserve in three sections: missing class, then CP, then creation order", () => {
     const seen = render();
     click(slot(1, 1));

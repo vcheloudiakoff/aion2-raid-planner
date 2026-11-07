@@ -6,6 +6,7 @@ import {
   changedCount,
   placeAt,
   placementOf,
+  retainedGroups,
   seatOf,
   swapSeats,
   toBench,
@@ -29,6 +30,13 @@ const view = (patch: Partial<OrganizerEvent> = {}): OrganizerEvent => ({
 });
 
 describe("placement", () => {
+  it("numbers the retained groups only, in the order received", () => {
+    expect(retainedGroups(view()).map(({ n, group }) => [n, group.id])).toEqual([
+      [1, "g1"],
+      [2, "g2"],
+    ]);
+  });
+
   it("reads the retained groups only, in order", () => {
     expect(placementOf(view())).toEqual({
       g1: { starters: { "1.2": KAEL }, bench: [NYRA_TWIN] },

@@ -959,19 +959,25 @@ describe("locked tabs", () => {
     m = mount(<div />);
   });
 
-  it("list the retained groups G1… in Salle, without any action", async () => {
+  it("show Salle, loaded on demand, one card per retained group, the sleeping one counted", async () => {
     serve(() => json(locked()));
     await render();
     click(tabs()[3]);
+    // Le squelette du chargement à la demande est vérifié dans `OrganizerPage.room.test.tsx`.
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+    await flush();
+    expect(q('[data-testid="room-loading"]')).toBeNull();
     const panel = q<HTMLElement>('[data-testid="room"]')!;
     expect(panel.querySelector("h2")!.textContent).toBe(tabs()[3].textContent);
-    expect([...panel.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
-      "G1 · mer. 05:00 · I1-K7Q2",
-      "G2 · ven. 05:00 · I1-M3NP",
+    expect([...panel.querySelectorAll("article h3")].map((h) => h.textContent)).toEqual([
+      "G1 · mer. 05:00",
+      "G2 · ven. 05:00",
     ]);
-    // Le groupe en sommeil n'a pas de ligne, mais il est compté.
+    // Le groupe en sommeil n'a pas de carte, mais il est compté.
+    expect(q('[data-testid="room-card-g2"]')).toBeNull();
     expect(q('[data-testid="room-sleeping"]')!.textContent).toBe("1 groupe en sommeil, repris s'il est reverrouillé.");
-    expect(panel.querySelectorAll("button, input, a")).toHaveLength(0);
   });
 
   it("go back to Disponibilités when the current tab disappears on refresh", async () => {
@@ -980,6 +986,10 @@ describe("locked tabs", () => {
     serve(() => json(current));
     await render();
     click(tabs()[3]);
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+    await flush();
     expect(q('[data-testid="room"]')).not.toBeNull();
     current = opened();
     await tick();
