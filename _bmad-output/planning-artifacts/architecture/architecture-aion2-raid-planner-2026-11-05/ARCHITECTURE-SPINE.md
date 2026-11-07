@@ -174,7 +174,9 @@ Sens unique : une couche ne dépend que de celles à sa droite. `domain` ne dép
     participant `accepted`. Sous droit participant, et seulement pour une candidature `accepted` placée
     d'un événement `locked`, `ParticipantView` porte ses coéquipiers : `Pseudo[SRV]` et classe, rien
     d'autre, des autres titulaires de la même équipe (même groupe, même Équipe) pour un titulaire, des
-    titulaires de son groupe pour un joueur au banc (décision de Vincent, 2026-11-07).
+    titulaires de son groupe pour un joueur au banc (décision de Vincent, 2026-11-07). Toujours sous droit
+    participant, une candidature `accepted` voit aussi la liste des candidatures `accepted` de l'événement
+    (`Pseudo[SRV]` et classe, rien d'autre), en `open` comme en `locked` (décision de Vincent, 2026-11-07).
   - Toute écriture passe par une commande de `app` (AD-16).
 
 ```mermaid
