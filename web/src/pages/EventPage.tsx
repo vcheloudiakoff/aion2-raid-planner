@@ -1,17 +1,19 @@
 // Page de l'événement `/e/<id>` et candidature directe `/j/<secret>` (CAP-2, CAP-3, EXPERIENCE.md
 // *Formulaires*) : un seul écran, le résumé puis le formulaire. Le jeton de formulaire est demandé dès
 // le premier rendu (AD-19) ; le résumé se relit toutes les 10 s sans toucher à la saisie. Le secret de
-// `/j` part en en-tête seulement, jamais dans `document.title` ni dans le texte de la page. Libellés de
-// jeu lus dans la référence, avec repli sur l'id (AD-6).
+// `/j` part en en-tête seulement, jamais dans `document.title` ni dans le texte de la page. Lien mort, à
+// la lecture comme à l'envoi : `/e` oublie son événement sur `event.not_found`, `/j` oublie son secret.
+// Libellés de jeu lus dans la référence, avec repli sur l'id (AD-6).
 
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { getEvent, submitCandidature, type EventAccess } from "../api/candidatures";
 import { ApiError } from "../api/client";
 import { getFormToken } from "../api/events";
-import { saveParticipantLink } from "../api/links";
-import type { PublicEvent, ReferenceSet, SubmitCandidature } from "../api/types";
+import { forgetEvent, forgetSecret, saveParticipantLink } from "../api/links";
+import type { CreatedCandidature, PublicEvent, ReferenceSet, SubmitCandidature } from "../api/types";
 import { CandidatureForm } from "../components/CandidatureForm";
+import { DeadLink, GONE, isDeadLinkCode } from "../components/DeadLink";
 import { Summary } from "../components/EventSummary";
 import { t, useLang } from "../i18n";
 import { readCandidatePrefs, writeCandidatePrefs } from "../lib/storage";
@@ -19,9 +21,6 @@ import { errorText } from "../lib/form";
 
 /** Relecture silencieuse (EXPERIENCE.md *Rafraîchissement*), ici et sur Ma candidature. */
 export const REFRESH_MS = 10_000;
-
-/** Codes terminaux : un seul message, « ce lien ne mène à rien », et plus aucune relecture. */
-export const GONE = new Set(["event.not_found", "auth.not_found", "auth.wrong_right", "auth.missing"]);
 
 /** Sous-ensemble à tester sans horloge réelle. */
 export interface EventPageDeps {
@@ -36,6 +35,13 @@ interface Props {
 
 const defaultDeps: EventPageDeps = { now: () => Date.now() };
 
+/** Lien mort : son entrée locale disparaît de « Sur cet appareil », le secret de `/j` ou
+ * l'événement de `/e`. */
+function forgetDead(access: EventAccess, code: string) {
+  if (access.mode === "join" && isDeadLinkCode(code)) forgetSecret(access.secret);
+  if (access.mode === "public" && code === "event.not_found") forgetEvent(access.eventId);
+}
+
 export function EventPage({ reference, mode, deps = defaultDeps }: Props) {
   useLang();
   const params = useParams();
@@ -46,6 +52,7 @@ export function EventPage({ reference, mode, deps = defaultDeps }: Props) {
   const [gone, setGone] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const token = useRef<Promise<string> | null>(null);
+  const stopRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     // Demandé au premier rendu, sans bloquer l'écran ; un échec est rattrapé à l'envoi.
@@ -59,6 +66,7 @@ export function EventPage({ reference, mode, deps = defaultDeps }: Props) {
     let alive = true;
     let id: ReturnType<typeof setInterval> | undefined;
     const stop = () => clearInterval(id);
+    stopRef.current = stop;
     setEvent(null);
     setGone(false);
     setLoadError(null);
@@ -78,6 +86,7 @@ export function EventPage({ reference, mode, deps = defaultDeps }: Props) {
             stop();
             setGone(true);
             setEvent(null);
+            forgetDead(access, code);
           } else {
             // Une relecture qui échoue garde les dernières données : seul un premier échec s'affiche.
             setLoadError(code ?? "");
@@ -119,7 +128,19 @@ export function EventPage({ reference, mode, deps = defaultDeps }: Props) {
     } catch {
       formToken = await getFormToken("candidature");
     }
-    const created = await submitCandidature(access, input, formToken, website);
+    let created: CreatedCandidature;
+    try {
+      created = await submitCandidature(access, input, formToken, website);
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : undefined;
+      // Lien mort à l'envoi : même traitement qu'à la lecture, le formulaire laisse place au message.
+      if (!code || !GONE.has(code)) throw err;
+      stopRef.current();
+      setGone(true);
+      setEvent(null);
+      forgetDead(access, code);
+      return;
+    }
     writeCandidatePrefs({ pseudo: input.pseudo, server: input.server, class: input.class });
     const stored = saveParticipantLink(created.eventId, created.candidatureId, created.participantSecret);
     navigate(created.links.participant, { state: { created, stored } });
@@ -151,24 +172,6 @@ export function EventPage({ reference, mode, deps = defaultDeps }: Props) {
           onSubmit={send}
         />
       )}
-    </main>
-  );
-}
-
-/** Lien inconnu, expiré ou d'un autre droit : un seul message, puis le retour à l'accueil. */
-export function DeadLink() {
-  useLang();
-  return (
-    <main className="mx-auto max-w-content px-3 py-6 min-[360px]:px-4">
-      <p role="alert" className="text-body">
-        {t("event.notFound")}
-      </p>
-      <Link
-        to="/"
-        className="mt-6 inline-flex min-h-tap items-center rounded-md border border-border px-4 text-label text-ink-primary no-underline"
-      >
-        {t("event.home")}
-      </Link>
     </main>
   );
 }

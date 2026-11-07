@@ -9,7 +9,7 @@ import { resetClientForTests } from "../api/client";
 import { LINKS_KEY } from "../api/links";
 import type { CandidatureStatus, ParticipantView } from "../api/types";
 import { resetLangForTests } from "../i18n";
-import { byText, click, fill, key, mount, type Mounted } from "../test/dom";
+import { byText, click, fill, key, mount, type Mounted, spyStorageWrites } from "../test/dom";
 import {
   CANDIDATURE_ID,
   EVENT_ID,
@@ -236,12 +236,107 @@ describe("local links", () => {
   });
 
   it("warns to copy the link when the browser cannot keep it", async () => {
-    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
-      throw new DOMException("blocked", "SecurityError");
-    });
+    spyStorageWrites(new DOMException("blocked", "SecurityError"));
     serve(() => json(participantView));
     await render();
     expect(m.container.textContent).toContain("Ce navigateur ne gardera pas le lien : copie-le maintenant.");
+  });
+});
+
+describe("dead link", () => {
+  const OTHER = "X".repeat(21) + "9";
+  const kept = {
+    [EVENT_ID]: { organizer: "O".repeat(43), participants: { [CANDIDATURE_ID]: PARTICIPANT } },
+    [OTHER]: { participants: { ["Y".repeat(22)]: "Q".repeat(43) } },
+  };
+  const stored = () => JSON.parse(localStorage.getItem(LINKS_KEY)!) as unknown;
+
+  it("forgets the secret on this device when the link leads nowhere", async () => {
+    localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+    serve(() => problem(404, "auth.not_found"));
+    await render();
+    expect(byText(m.container, "Retour à l'accueil")).toBeTruthy();
+    expect(stored()).toEqual({ ...kept, [EVENT_ID]: { organizer: "O".repeat(43), participants: {} } });
+  });
+
+  it("forgets the link kept at the first read when a refresh finds it dead", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let gone = false;
+    serve(() => (gone ? problem(404, "auth.not_found") : json(participantView)));
+    await render();
+    expect(stored()).toEqual({ [EVENT_ID]: { participants: { [CANDIDATURE_ID]: PARTICIPANT } } });
+    gone = true;
+    await tick();
+    expect(byText(m.container, "Retour à l'accueil")).toBeTruthy();
+    expect(stored()).toEqual({});
+  });
+
+  it("shows the dead link and forgets the secret when the link dies under an edit or a withdrawal", async () => {
+    const withdraw = async () => {
+      click(button("Me retirer")!);
+      const confirm = [...dialog()!.querySelectorAll("button")].find((b) => b.textContent === "Me retirer")!;
+      await act(async () => confirm.click());
+      await flush();
+    };
+    const edit = async () => {
+      click(button("Modifier")!);
+      await act(async () => q<HTMLButtonElement>('button[type="submit"]')!.click());
+      await flush();
+    };
+    for (const [name, gesture] of [
+      ["edit", edit],
+      ["withdraw", withdraw],
+    ] as const) {
+      localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      const calls = serve(() => json(participantView), () => problem(404, "auth.not_found"));
+      await render();
+      await gesture();
+      expect(q('[role="alert"]')!.textContent, name).toBe("Ce lien ne mène à rien. Il a peut-être expiré.");
+      expect(byText(m.container, "Retour à l'accueil"), name).toBeTruthy();
+      expect(dialog(), name).toBeNull();
+      expect(stored(), name).toEqual({ ...kept, [EVENT_ID]: { organizer: "O".repeat(43), participants: {} } });
+      // Plus aucune relecture.
+      const before = reads(calls);
+      await tick(2);
+      expect(reads(calls), name).toBe(before);
+      m.unmount();
+      vi.useRealTimers();
+    }
+    m = mount(<div />);
+  });
+
+  it("shows the dead link but forgets nothing when a command meets a wrong right", async () => {
+    localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+    serve(() => json(participantView), () => problem(403, "auth.wrong_right"));
+    await render();
+    click(button("Modifier")!);
+    await act(async () => q<HTMLButtonElement>('button[type="submit"]')!.click());
+    await flush();
+    expect(byText(m.container, "Retour à l'accueil")).toBeTruthy();
+    expect(stored()).toEqual(kept);
+  });
+
+  it("forgets nothing on a wrong right, a network failure, a quota or an outage", async () => {
+    const cases: [string, () => Response][] = [
+      ["wrong right", () => problem(403, "auth.wrong_right")],
+      ["quota", () => problem(429, "limit.rate_limited")],
+      ["outage", () => problem(503, "server.unavailable")],
+      [
+        "network",
+        () => {
+          throw new TypeError("Failed to fetch");
+        },
+      ],
+    ];
+    for (const [name, reply] of cases) {
+      localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+      serve(reply);
+      await render();
+      expect(stored(), name).toEqual(kept);
+      m.unmount();
+    }
+    m = mount(<div />);
   });
 });
 

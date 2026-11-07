@@ -1,8 +1,13 @@
 // Écran `/new` (CAP-1, EXPERIENCE.md *Formulaires*) : un seul écran à 360 px, puis l'étape « Liens
 // créés ». Le jeton de formulaire est demandé dès le premier rendu, en parallèle (AD-19). Les heures
 // sont saisies en heure locale et envoyées en UTC (AD-11). Libellés de jeu lus dans la référence.
+// « Dupliquer » (`/o`, Réglages) arrive avec un brouillon dans l'état de navigation : le formulaire
+// en part, sauf les dates, avec les règles de toute saisie (instance ou région désactivée ignorée,
+// bornes ramenées à l'instance, portée ajustée). L'état est effacé dès sa lecture : un rechargement
+// rend un formulaire vierge.
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { ApiError } from "../api/client";
 import { createEvent, getFormToken } from "../api/events";
 import { saveOrganizerLinks } from "../api/links";
@@ -19,6 +24,7 @@ import {
 } from "../components/EventFields";
 import { SlotInputs } from "../components/SlotEditor";
 import { t, useLang, type MessageKey } from "../i18n";
+import { duplicateFromState, type DuplicateDraft } from "../lib/duplicate";
 import {
   NOTE_MAX,
   SLOTS_MAX,
@@ -48,10 +54,39 @@ interface Props {
   reference: ReferenceSet | null;
 }
 
+/** Vrai si un brouillon de « Dupliquer » porte un CP minimum ou des bornes autres que celles par
+ * défaut, une fois ramenées à l'instance retenue : « Options » s'ouvre alors, pour que rien ne se
+ * publie sans avoir été vu. Sans la référence, toute borne compte. */
+function carriesOptions(d: DuplicateDraft, reference: ReferenceSet | null): boolean {
+  if (d.minCp !== undefined) return true;
+  const instances = reference?.instances.filter((i) => i.enabled) ?? [];
+  const instance = instances.find((i) => i.id === d.instance) ?? instances[0];
+  if (!reference || !instance) return Object.keys(d.classBounds).length > 0;
+  const cap = capOf(instance);
+  return reference.classes.some((c) => {
+    const b = d.classBounds[c.id];
+    if (!c.enabled || !b) return false;
+    const shown = defaultBound(b.min, b.max, cap);
+    const usual = defaultBound(c.defaultMin, c.defaultMax, cap);
+    return shown.min !== usual.min || shown.max !== usual.max;
+  });
+}
+
 export function NewEvent({ reference }: Props) {
   const lang = useLang();
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Brouillon de « Dupliquer », lu une fois au montage.
+  const [seed] = useState(() => duplicateFromState(location.state));
   const [created, setCreated] = useState<{ event: CreatedEvent; stored: boolean } | null>(null);
   const token = useRef<Promise<string> | null>(null);
+
+  useEffect(() => {
+    // Consommé : effacé de l'historique, pour qu'un rechargement rende un formulaire vierge.
+    if (location.state !== null && location.state !== undefined) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
     // Demandé au premier rendu, sans bloquer l'écran ; un échec est rattrapé à l'envoi.
@@ -65,6 +100,7 @@ export function NewEvent({ reference }: Props) {
     <Form
       reference={reference}
       lang={lang}
+      initial={seed}
       token={() => token.current ?? Promise.reject(new Error("no token"))}
       onCreated={(event) => {
         // Gardé avant l'affichage : un rechargement de l'étape suivante ne perd rien de récupérable.
@@ -79,28 +115,40 @@ export function NewEvent({ reference }: Props) {
 interface FormProps {
   reference: ReferenceSet | null;
   lang: string;
+  /** Brouillon de « Dupliquer » ; absent = formulaire vierge. */
+  initial: DuplicateDraft | null;
   token: () => Promise<string>;
   onCreated: (event: CreatedEvent) => void;
 }
 
-function Form({ reference, lang, token, onCreated }: FormProps) {
+function Form({ reference, lang, initial, token, onCreated }: FormProps) {
   const ids = useId();
   const instances = reference?.instances.filter((i) => i.enabled) ?? [];
   const regions = reference?.regions.filter((r) => r.enabled) ?? [];
   const classes = reference?.classes.filter((c) => c.enabled) ?? [];
 
-  const [instanceId, setInstanceId] = useState("");
-  const [regionId, setRegionId] = useState("");
-  const [scope, setScope] = useState<FactionScope>("all");
-  const nextKey = useRef(1);
-  const [slots, setSlots] = useState<SlotDraft[]>([{ key: 0, local: "", duration: "" }]);
-  const [note, setNote] = useState("");
-  const [discordUrl, setDiscordUrl] = useState("");
-  const [listed, setListed] = useState(true);
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  const [minCp, setMinCp] = useState("");
+  // Valeurs du brouillon telles quelles : une instance ou une région absente des choix retombe sur
+  // le premier choix, comme toute valeur inconnue, et la portée suit l'instance retenue.
+  const [instanceId, setInstanceId] = useState(initial?.instance ?? "");
+  const [regionId, setRegionId] = useState(initial?.region ?? "");
+  const [scope, setScope] = useState<FactionScope>(initial?.factionScope ?? "all");
+  const nextKey = useRef(initial ? initial.slots.length : 1);
+  const [slots, setSlots] = useState<SlotDraft[]>(() =>
+    initial
+      ? initial.slots.map((s, key) => ({
+          key,
+          local: "",
+          duration: s.durationMin === undefined ? "" : String(s.durationMin),
+        }))
+      : [{ key: 0, local: "", duration: "" }],
+  );
+  const [note, setNote] = useState(initial?.note ?? "");
+  const [discordUrl, setDiscordUrl] = useState(initial?.discordUrl ?? "");
+  const [listed, setListed] = useState(initial ? initial.visibility === "listed" : true);
+  const [optionsOpen, setOptionsOpen] = useState(() => initial !== null && carriesOptions(initial, reference));
+  const [minCp, setMinCp] = useState(initial?.minCp === undefined ? "" : String(initial.minCp));
   const [minCpBad, setMinCpBad] = useState(false);
-  const [bounds, setBounds] = useState<Record<string, Bound>>({});
+  const [bounds, setBounds] = useState<Record<string, Bound>>(initial?.classBounds ?? {});
   const [website, setWebsite] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,8 +163,12 @@ function Form({ reference, lang, token, onCreated }: FormProps) {
   const effectiveScope: FactionScope = scope === "all" && instance && !instance.crossFaction ? "elyos" : scope;
   const scopeAllowed = effectiveScope !== "all" || !!instance?.crossFaction;
 
-  const boundOf = (id: string, defaultMin: number, defaultMax: number): Bound =>
-    bounds[id] ?? defaultBound(defaultMin, defaultMax, cap);
+  // Toujours dans la taille de l'instance retenue : une borne reprise d'un raid dupliqué peut la
+  // dépasser, l'instance d'origine pouvant être désactivée ou la référence arrivée après.
+  const boundOf = (id: string, defaultMin: number, defaultMax: number): Bound => {
+    const b = bounds[id];
+    return b ? defaultBound(b.min, b.max, cap) : defaultBound(defaultMin, defaultMax, cap);
+  };
 
   let reason: MessageKey | null = null;
   if (!instance || !region) reason = "new.reason.loading";
@@ -136,7 +188,7 @@ function Form({ reference, lang, token, onCreated }: FormProps) {
     e.preventDefault();
     if (reason || sending || !instance || !region) return;
     const classBounds: Record<string, Bound> = {};
-    for (const c of classes) if (bounds[c.id]) classBounds[c.id] = bounds[c.id];
+    for (const c of classes) if (bounds[c.id]) classBounds[c.id] = boundOf(c.id, c.defaultMin, c.defaultMax);
     const cp = minCp.trim() === "" ? undefined : Number(minCp.trim());
     const input: CreateEvent = {
       instance: instance.id,

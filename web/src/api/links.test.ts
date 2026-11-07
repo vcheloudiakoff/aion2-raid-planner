@@ -4,12 +4,15 @@ import {
   LINKS_KEY,
   eventLinks,
   forgetEvent,
+  forgetOrganizer,
   forgetParticipant,
+  forgetSecret,
   readLinks,
   saveOrganizerLink,
   saveOrganizerLinks,
   saveParticipantLink,
 } from "./links";
+import { spyStorageWrites } from "../test/dom";
 
 const id = (c: string) => c.repeat(22);
 const secret = (c: string) => c.repeat(43);
@@ -20,6 +23,7 @@ const C = id("C");
 const D = id("D");
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   localStorage.clear();
 });
@@ -62,6 +66,48 @@ describe("links", () => {
     expect(saveOrganizerLink("short", secret("o"))).toBe(false);
     expect(saveOrganizerLink(D, `${secret("o").slice(1)}+`)).toBe(false);
     expect(eventLinks(D)).toBeUndefined();
+  });
+
+  it("forgets the organizer and direct links, keeping the candidatures", () => {
+    saveOrganizerLinks(E, { organizer: secret("o"), join: secret("j") });
+    saveParticipantLink(E, C, secret("p"));
+    saveOrganizerLinks(F, { organizer: secret("q"), join: secret("r") });
+    expect(forgetOrganizer(E)).toBe(true);
+    expect(eventLinks(E)).toEqual({ participants: { [C]: secret("p") } });
+    // Plus rien pour cet événement : l'entrée disparaît.
+    expect(forgetOrganizer(F)).toBe(true);
+    expect(eventLinks(F)).toBeUndefined();
+    expect(Object.keys(readLinks())).toEqual([E]);
+  });
+
+  it("forgets every slot holding a secret, wherever it is", () => {
+    saveOrganizerLinks(E, { organizer: secret("o"), join: secret("j") });
+    saveParticipantLink(E, C, secret("p"));
+    saveParticipantLink(F, D, secret("q"));
+    saveOrganizerLinks(F, { organizer: secret("r"), join: secret("s") });
+    // Un lien direct mort ne touche que lui.
+    expect(forgetSecret(secret("s"))).toBe(true);
+    expect(eventLinks(F)).toEqual({ organizer: secret("r"), participants: { [D]: secret("q") } });
+    // Un lien organisateur mort emporte le lien direct de son événement, jamais ses candidatures.
+    expect(forgetSecret(secret("o"))).toBe(true);
+    expect(eventLinks(E)).toEqual({ participants: { [C]: secret("p") } });
+    expect(forgetSecret(secret("j"))).toBe(false);
+    expect(forgetSecret(secret("p"))).toBe(true);
+    expect(eventLinks(E)).toBeUndefined();
+    expect(forgetSecret(secret("q"))).toBe(true);
+    expect(forgetSecret(secret("r"))).toBe(true);
+    expect(readLinks()).toEqual({});
+  });
+
+  it("writes nothing when no slot holds the secret, or when it is malformed", () => {
+    saveParticipantLink(E, C, secret("p"));
+    const before = localStorage.getItem(LINKS_KEY);
+    const setItem = spyStorageWrites();
+    expect(forgetSecret(secret("x"))).toBe(false);
+    expect(forgetSecret("short")).toBe(false);
+    expect(forgetSecret("")).toBe(false);
+    expect(setItem).not.toHaveBeenCalled();
+    expect(localStorage.getItem(LINKS_KEY)).toBe(before);
   });
 
   it("refuses malformed ids and secrets", () => {
@@ -114,6 +160,8 @@ describe("links", () => {
     expect(saveParticipantLink(E, C, secret("p"))).toBe(false);
     expect(forgetParticipant(E, C)).toBe(false);
     expect(forgetEvent(E)).toBe(false);
+    expect(forgetOrganizer(E)).toBe(false);
+    expect(forgetSecret(secret("o"))).toBe(false);
   });
 
   it("keeps the page working when localStorage is absent", () => {

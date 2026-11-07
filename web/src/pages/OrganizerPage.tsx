@@ -1,17 +1,21 @@
-// Page organisateur `/o/<secret>` (CAP-5, EXPERIENCE.md *Information Architecture*, *State
-// Patterns*) : titre instance + date, barre d'onglets fixe Candidatures · Réglages. Candidatures
-// liste toutes les candidatures dans l'ordre de création, chaque ligne ouvre sa feuille (accepter,
-// refuser, copier `Pseudo[SRV]`). Réglages (`EventSettings`) règle l'événement, ses créneaux et son
-// annulation ; raid annulé, l'onglet est en lecture seule. Relecture silencieuse toutes les 10 s,
-// feuille ouverte comprise, arrêtée sur un lien mort ou un raid annulé ; une ligne apparue au
-// rafraîchissement porte un liseré or 3 s. Toutes les commandes passent par `command` : une seule à
-// la fois, la relecture l'attend, sa vue s'applique dans l'ordre des requêtes. Le secret part en
-// en-tête seulement et n'apparaît ni dans la page ni dans `document.title`.
+// Page organisateur `/o/<secret>` (CAP-5, CAP-6, EXPERIENCE.md *Information Architecture*, *State
+// Patterns*, *Liens et appareils*) : titre instance + date, barre d'onglets fixe Candidatures ·
+// Réglages. Candidatures liste toutes les candidatures dans l'ordre de création, chaque ligne ouvre
+// sa feuille (accepter, refuser, copier `Pseudo[SRV]`). Réglages commence par « Ton lien
+// d'organisateur » à copier pour changer d'appareil, puis `EventSettings` règle l'événement, ses
+// créneaux et son annulation et propose « Dupliquer » ; raid annulé, l'onglet est en lecture seule.
+// Le lien est gardé sur cet appareil à la première lecture ; si le navigateur ne peut pas le garder,
+// la page le dit quel que soit l'onglet, en renvoyant à Réglages pour le copier. Relecture silencieuse toutes les 10 s, feuille ouverte
+// comprise, arrêtée sur un lien mort (qui oublie son secret sur cet appareil) ou un raid annulé ; une
+// ligne apparue au rafraîchissement porte un liseré or 3 s. Toutes les commandes passent par
+// `command` : une seule à la fois, la relecture l'attend, sa vue s'applique dans l'ordre des
+// requêtes. Le secret part en en-tête seulement ; il n'apparaît dans la page que dans la puce de
+// Réglages, jamais dans `document.title`.
 
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useParams } from "react-router";
 import { ApiError } from "../api/client";
-import { saveOrganizerLink } from "../api/links";
+import { forgetSecret, saveOrganizerLink } from "../api/links";
 import {
   addSlot,
   cancelEvent,
@@ -23,6 +27,8 @@ import {
 import type { Decision, OrganizerEvent, ReferenceSet } from "../api/types";
 import { CandidatureRow } from "../components/CandidatureRow";
 import { CandidatureSheet } from "../components/CandidatureSheet";
+import { CopyChip } from "../components/CopyChip";
+import { DeadLink, GONE, isDeadLinkCode } from "../components/DeadLink";
 import {
   EventSettings,
   type CommandOutcome,
@@ -32,7 +38,7 @@ import {
 import { eventTitle } from "../components/EventSummary";
 import { t, useLang } from "../i18n";
 import { errorText } from "../lib/form";
-import { DeadLink, GONE, REFRESH_MS } from "./EventPage";
+import { REFRESH_MS } from "./EventPage";
 
 /** Durée du liseré or d'une nouvelle candidature. */
 export const FRESH_MS = 3000;
@@ -62,10 +68,11 @@ const defaultDeps: OrganizerPageDeps = { now: () => Date.now() };
 
 interface Props {
   reference: ReferenceSet | null;
+  origin?: string;
   deps?: OrganizerPageDeps;
 }
 
-export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
+export function OrganizerPage({ reference, origin = window.location.origin, deps = defaultDeps }: Props) {
   const lang = useLang();
   const { secret = "" } = useParams();
   const ids = useId();
@@ -78,6 +85,8 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
+  /** Faux si `saveOrganizerLink` n'a pas pu écrire : ce navigateur ne gardera pas le lien. */
+  const [stored, setStored] = useState(true);
   /** Numéro de la dernière requête lancée (lecture ou commande) et de la dernière vue appliquée :
    * une réponse plus ancienne que la vue affichée est ignorée. */
   const issued = useRef(0);
@@ -136,8 +145,9 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
       if (n > errorAt.current) setActionError(null);
       if (v.event.status === "cancelled") stopRef.current();
       if (!savedRef.current) {
+        // Ce navigateur retient le lien, même ouvert depuis un autre appareil.
         savedRef.current = true;
-        saveOrganizerLink(v.event.id, secret);
+        setStored(saveOrganizerLink(v.event.id, secret));
       }
     },
     [secret, mark],
@@ -162,6 +172,7 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
     setView(null);
     setGone(false);
     setLoadError(null);
+    setStored(true);
     const load = () => {
       const n = ++issued.current;
       return getOrganizerView(secret).then(
@@ -175,6 +186,8 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
             stop();
             setGone(true);
             setView(null);
+            // Lien mort : son entrée locale disparaît de « Sur cet appareil ».
+            if (isDeadLinkCode(code)) forgetSecret(secret);
           } else {
             // Une relecture qui échoue garde les dernières données : seul un premier échec s'affiche.
             setLoadError(code ?? "");
@@ -227,6 +240,7 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
         setOpenId(null);
         setGone(true);
         setView(null);
+        if (isDeadLinkCode(api.code)) forgetSecret(secret);
         return { ok: false, handled: true, code: api.code, fields: {} };
       }
       if (api.code && STATE_CODES.has(api.code)) {
@@ -331,6 +345,11 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
         ))}
       </div>
 
+      {!stored && (
+        <p role="alert" className="mt-4 rounded-md border border-danger px-3 py-2 text-label text-danger">
+          {t("organizer.noStorage")}
+        </p>
+      )}
       {view.event.status === "cancelled" && (
         <p role="status" className="mt-4 rounded-md border border-danger px-3 py-2 text-label text-danger">
           {t("event.cancelled")}
@@ -360,14 +379,24 @@ export function OrganizerPage({ reference, deps = defaultDeps }: Props) {
             </ul>
           )
         ) : (
-          <EventSettings
-            view={view}
-            reference={reference}
-            now={deps.now}
-            busy={pending}
-            actions={settingsActions}
-            fallbackFocus={heading}
-          />
+          <>
+            {/* Changer d'appareil : copier ce lien, le coller ailleurs (EXPERIENCE.md *Liens et appareils*). */}
+            <section data-testid="my-link" className="mt-4">
+              <h2 className="text-label">{t("links.organizer")}</h2>
+              <p className="mt-1 text-meta text-ink-secondary">{t("links.organizerWarning")}</p>
+              <div className="mt-2">
+                <CopyChip value={`${origin}/o/${secret}`} label={t("links.organizer")} />
+              </div>
+            </section>
+            <EventSettings
+              view={view}
+              reference={reference}
+              now={deps.now}
+              busy={pending}
+              actions={settingsActions}
+              fallbackFocus={heading}
+            />
+          </>
         )}
       </div>
 

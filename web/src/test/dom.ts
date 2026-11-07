@@ -1,6 +1,7 @@
 // Rendu de test minimal, sans bibliothèque : `createRoot` + `act`.
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { onTestFinished, vi } from "vitest";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -53,4 +54,18 @@ export function fill(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElem
     setter?.call(el, value);
     el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
   });
+}
+
+/** Espion sur `localStorage.setItem`, qui lève `error` s'il est donné. Il est défait à la fin du
+ * test : `vi.restoreAllMocks` ne défait pas un espion posé sur le `localStorage` de happy-dom, qui
+ * fuirait sinon dans les tests suivants du fichier. */
+export function spyStorageWrites(error?: DOMException) {
+  const spy = vi.spyOn(localStorage, "setItem");
+  if (error) {
+    spy.mockImplementation(() => {
+      throw error;
+    });
+  }
+  onTestFinished(() => spy.mockRestore());
+  return spy;
 }

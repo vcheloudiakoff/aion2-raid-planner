@@ -10,7 +10,7 @@ import { LINKS_KEY } from "../api/links";
 import type { PublicEvent } from "../api/types";
 import { resetLangForTests } from "../i18n";
 import { CANDIDATE_PREFS_KEY } from "../lib/storage";
-import { byText, click, fill, mount, type Mounted } from "../test/dom";
+import { byText, click, fill, mount, type Mounted, spyStorageWrites } from "../test/dom";
 import {
   CANDIDATURE_ID,
   EVENT_ID,
@@ -397,9 +397,7 @@ describe("form", () => {
   });
 
   it("warns on /p when the browser cannot keep the link", async () => {
-    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
-      throw new DOMException("blocked", "SecurityError");
-    });
+    spyStorageWrites(new DOMException("blocked", "SecurityError"));
     serve(() => json(publicEvent), () => json({ ...createdCandidature, status: "accepted" }, 201));
     await render();
     fillValid();
@@ -434,6 +432,82 @@ describe("states", () => {
       expect(byText(m.container, "Raid annulé")).toBeTruthy();
       expect(m.container.querySelector("form")).toBeNull();
       m.unmount();
+    }
+    m = mount(<div />);
+  });
+
+  it("forgets the event on /e and the direct link on /j when they lead nowhere", async () => {
+    const OTHER = "X".repeat(21) + "9";
+    const kept = {
+      [EVENT_ID]: { organizer: "O".repeat(43), join: JOIN, participants: { [CANDIDATURE_ID]: PARTICIPANT } },
+      [OTHER]: { join: "Q".repeat(43), participants: {} },
+    };
+    const stored = () => JSON.parse(localStorage.getItem(LINKS_KEY)!) as unknown;
+
+    localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+    serve(() => problem(404, "event.not_found"));
+    await render(`/e/${EVENT_ID}`);
+    expect(byText(m.container, "Retour à l'accueil")).toBeTruthy();
+    expect(stored()).toEqual({ [OTHER]: kept[OTHER] });
+    m.unmount();
+
+    localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+    serve(() => problem(404, "auth.not_found"));
+    await render(`/j/${JOIN}`);
+    expect(byText(m.container, "Retour à l'accueil")).toBeTruthy();
+    expect(stored()).toEqual({
+      ...kept,
+      [EVENT_ID]: { organizer: "O".repeat(43), participants: { [CANDIDATURE_ID]: PARTICIPANT } },
+    });
+    m.unmount();
+
+    // Ni un lien d'un autre droit, ni le réseau, ni une panne ne retirent quoi que ce soit.
+    for (const [path, reply] of [
+      [`/j/${JOIN}`, () => problem(403, "auth.wrong_right")],
+      [`/j/${JOIN}`, () => Promise.reject(new TypeError("Failed to fetch"))],
+      [`/e/${EVENT_ID}`, () => problem(500, "server.internal")],
+      [`/e/${EVENT_ID}`, () => problem(429, "limit.rate_limited")],
+    ] as const) {
+      localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+      serve(reply as () => Response);
+      await render(path);
+      expect(stored(), path).toEqual(kept);
+      m.unmount();
+    }
+    m = mount(<div />);
+  });
+
+  it("shows the dead link and forgets it when the link dies under the candidature", async () => {
+    const OTHER = "X".repeat(21) + "9";
+    const kept = {
+      [EVENT_ID]: { organizer: "O".repeat(43), join: JOIN, participants: {} },
+      [OTHER]: { join: "Q".repeat(43), participants: {} },
+    };
+    const stored = () => JSON.parse(localStorage.getItem(LINKS_KEY)!) as unknown;
+    for (const [path, code, after] of [
+      [`/e/${EVENT_ID}`, "event.not_found", { [OTHER]: kept[OTHER] }],
+      [`/j/${JOIN}`, "auth.not_found", { ...kept, [EVENT_ID]: { organizer: "O".repeat(43), participants: {} } }],
+      [`/j/${JOIN}`, "auth.wrong_right", kept],
+    ] as const) {
+      localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      const calls = serve(() => json(publicEvent), () => problem(code === "auth.wrong_right" ? 403 : 404, code));
+      await render(path);
+      fillValid();
+      await submit();
+      expect(q('[role="alert"]').textContent, code).toBe("Ce lien ne mène à rien. Il a peut-être expiré.");
+      expect(byText(m.container, "Retour à l'accueil"), code).toBeTruthy();
+      expect(m.container.querySelector("form"), code).toBeNull();
+      expect(stored(), code).toEqual(after);
+      // Plus aucune relecture.
+      const before = calls.length;
+      await act(async () => {
+        vi.advanceTimersByTime(REFRESH_MS * 2);
+      });
+      await flush();
+      expect(calls.length, code).toBe(before);
+      m.unmount();
+      vi.useRealTimers();
     }
     m = mount(<div />);
   });

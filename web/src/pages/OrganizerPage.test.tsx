@@ -9,7 +9,7 @@ import { resetClientForTests } from "../api/client";
 import { LINKS_KEY } from "../api/links";
 import type { OrganizerCandidature, OrganizerEvent } from "../api/types";
 import { resetLangForTests } from "../i18n";
-import { byText, click, fill, key, mount, type Mounted } from "../test/dom";
+import { byText, click, fill, key, mount, type Mounted, spyStorageWrites } from "../test/dom";
 import { EVENT_ID, JOIN, KAEL, LIO, NYRA, NYRA_TWIN, ORGANIZER, TOMA, organizerEvent, reference } from "../test/fixtures";
 import { REFRESH_MS } from "./EventPage";
 import { FRESH_MS, OrganizerPage } from "./OrganizerPage";
@@ -174,8 +174,9 @@ describe("page", () => {
     const discord = byText(settings, "https://discord.gg/abcdef") as HTMLAnchorElement;
     expect(discord.getAttribute("href")).toBe("https://discord.gg/abcdef");
     expect(discord.getAttribute("rel")).toBe("noopener noreferrer");
-    // Lecture seule : aucun champ ni bouton de réglage.
-    expect(settings.querySelectorAll("input, select, textarea, button")).toHaveLength(0);
+    // Lecture seule : aucun champ ni bouton de réglage ; seul « Dupliquer » reste.
+    expect(settings.querySelectorAll("input, select, textarea")).toHaveLength(0);
+    expect([...settings.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Dupliquer"]);
     m.unmount();
 
     serve(() => json(viewWith({}, { status: "cancelled" }, { discordUrl: undefined })));
@@ -781,12 +782,125 @@ describe("local links", () => {
     });
   });
 
-  it("keeps the page working when the browser cannot keep the link", async () => {
-    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
-      throw new DOMException("blocked", "SecurityError");
-    });
+  it("keeps the page working when the browser cannot keep the link, and says to copy it now", async () => {
+    spyStorageWrites(new DOMException("blocked", "SecurityError"));
     serve(() => json(organizerEvent));
     await render();
     expect(rowIds()).toHaveLength(5);
+    // Visible quel que soit l'onglet.
+    const warning = "Ce navigateur ne gardera pas ce lien : copie-le maintenant, depuis l'onglet Réglages.";
+    expect(q('[role="alert"]')!.textContent).toBe(warning);
+    click(tabs()[1]);
+    expect(q('[role="alert"]')!.textContent).toBe(warning);
+    expect(q('[data-testid="my-link"]')).not.toBeNull();
+  });
+
+  it("offers the organizer link to copy at the top of Réglages, never in the title", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true, writable: true });
+    serve(() => json(organizerEvent));
+    await render();
+    expect(q('[data-testid="my-link"]')).toBeNull();
+    expect(m.container.textContent).not.toContain(ORGANIZER);
+    click(tabs()[1]);
+    const block = q<HTMLElement>('[data-testid="my-link"]')!;
+    expect(block.compareDocumentPosition(q('[data-testid="settings"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(block.querySelector("h2")!.textContent).toBe("Ton lien d'organisateur");
+    expect(block.textContent).toContain("Garde ce lien : c'est le seul moyen de gérer ton raid.");
+    const chip = block.querySelector("button")!;
+    expect(chip.textContent).toBe(`${window.location.origin}/o/${ORGANIZER}`);
+    expect(chip.getAttribute("aria-label")).toBe("Copier : Ton lien d'organisateur");
+    await press(chip);
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/o/${ORGANIZER}`);
+    expect(byText(m.container, "Copié")).toBeTruthy();
+    expect(m.container.textContent).not.toContain("Ce navigateur ne gardera pas");
+    expect(document.title).not.toContain(ORGANIZER);
+  });
+
+  it("offers the link on a cancelled raid too", async () => {
+    serve(() => json(viewWith({}, { status: "cancelled" })));
+    await render();
+    click(tabs()[1]);
+    expect(q('[data-testid="my-link"] button')!.textContent).toBe(`${window.location.origin}/o/${ORGANIZER}`);
+  });
+});
+
+describe("dead link", () => {
+  const OTHER = "X".repeat(21) + "9";
+  const kept = {
+    [EVENT_ID]: { organizer: ORGANIZER, join: JOIN, participants: { [NYRA]: "Q".repeat(43) } },
+    [OTHER]: { organizer: "W".repeat(43), participants: {} },
+  };
+  const stored = () => JSON.parse(localStorage.getItem(LINKS_KEY)!) as unknown;
+
+  it("forgets the secret on this device when the link leads nowhere, at once or on a refresh", async () => {
+    localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+    serve(() => problem(404, "auth.not_found"));
+    await render();
+    expect(byText(m.container, "Retour à l'accueil")).toBeTruthy();
+    // Le lien direct part avec lui : seul, il n'aurait aucune ligne sur l'accueil.
+    expect(stored()).toEqual({ ...kept, [EVENT_ID]: { participants: { [NYRA]: "Q".repeat(43) } } });
+    m.unmount();
+
+    // Raid purgé pendant que la page est ouverte : le lien gardé au premier chargement s'oublie.
+    localStorage.setItem(LINKS_KEY, JSON.stringify({ [OTHER]: kept[OTHER] }));
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let gone = false;
+    serve(() => (gone ? problem(404, "auth.not_found") : json(organizerEvent)));
+    await render();
+    expect(stored()).toEqual({ [OTHER]: kept[OTHER], [EVENT_ID]: { organizer: ORGANIZER, participants: {} } });
+    gone = true;
+    await tick();
+    expect(byText(m.container, "Retour à l'accueil")).toBeTruthy();
+    expect(stored()).toEqual({ [OTHER]: kept[OTHER] });
+  });
+
+  it("forgets the secret when the link dies under a command", async () => {
+    serve(
+      () => json(organizerEvent),
+      () => problem(404, "auth.not_found"),
+    );
+    await render();
+    expect(stored()).toEqual({ [EVENT_ID]: { organizer: ORGANIZER, participants: {} } });
+    click(row(NYRA));
+    await press(inDialog("Accepter"));
+    expect(byText(m.container, "Retour à l'accueil")).toBeTruthy();
+    expect(stored()).toEqual({});
+  });
+
+  it("forgets nothing on a wrong right, a missing secret, a network failure, a quota or an outage", async () => {
+    const cases: [string, () => Response][] = [
+      ["wrong right", () => problem(403, "auth.wrong_right")],
+      ["missing", () => problem(401, "auth.missing")],
+      ["quota", () => problem(429, "limit.rate_limited")],
+      ["outage", () => problem(500, "server.internal")],
+      [
+        "network",
+        () => {
+          throw new TypeError("Failed to fetch");
+        },
+      ],
+    ];
+    for (const [name, reply] of cases) {
+      localStorage.setItem(LINKS_KEY, JSON.stringify(kept));
+      serve(reply);
+      await render();
+      expect(stored(), name).toEqual(kept);
+      m.unmount();
+    }
+    m = mount(<div />);
+  });
+
+  it("forgets nothing when a command meets a wrong right or a network failure", async () => {
+    for (const reply of [() => problem(403, "auth.wrong_right"), () => Promise.reject(new TypeError("x"))]) {
+      localStorage.clear();
+      serve(() => json(organizerEvent), reply as () => Response);
+      await render();
+      click(row(NYRA));
+      await press(inDialog("Accepter"));
+      expect(stored()).toEqual({ [EVENT_ID]: { organizer: ORGANIZER, participants: {} } });
+      m.unmount();
+    }
+    m = mount(<div />);
   });
 });

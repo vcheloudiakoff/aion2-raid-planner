@@ -2,13 +2,14 @@
 // tête « Ton lien personnel » avec sa puce, le partage et l'avertissement, puis le statut, le lien
 // Discord des acceptés, le résumé public, la candidature en lecture et les actions « Modifier » et
 // « Me retirer ». Relecture silencieuse toutes les 10 s, jamais pendant une modification, arrêtée
-// sur un lien mort, un raid annulé ou une candidature retirée. Le secret part en en-tête seulement et
-// n'apparaît que dans la puce, jamais dans `document.title`.
+// sur un lien mort (à la lecture ou sous une commande, qui oublie son secret sur cet appareil), un
+// raid annulé ou une candidature retirée. Le secret part en en-tête seulement et n'apparaît que dans la puce, jamais dans
+// `document.title`.
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ApiError } from "../api/client";
-import { saveParticipantLink } from "../api/links";
+import { forgetSecret, saveParticipantLink } from "../api/links";
 import { getParticipant, updateCandidature, withdrawCandidature } from "../api/participant";
 import { labelOf } from "../api/reference";
 import type {
@@ -21,10 +22,11 @@ import type {
 import { CandidatureForm } from "../components/CandidatureForm";
 import { ConfirmSheet } from "../components/ConfirmSheet";
 import { CopyChip } from "../components/CopyChip";
+import { DeadLink, GONE, isDeadLinkCode } from "../components/DeadLink";
 import { FactionDot, Summary, roleLabel } from "../components/EventSummary";
 import { t, useLang, type MessageKey } from "../i18n";
 import { formatDay, formatSlot } from "../lib/time";
-import { DeadLink, GONE, REFRESH_MS } from "./EventPage";
+import { REFRESH_MS } from "./EventPage";
 import { errorText } from "../lib/form";
 
 /** État de navigation posé par le formulaire de candidature après le succès. */
@@ -172,6 +174,8 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
             stop();
             setGone(true);
             setView(null);
+            // Lien mort : son entrée locale disparaît de « Sur cet appareil ».
+            if (isDeadLinkCode(code)) forgetSecret(secret);
           } else {
             // Une relecture qui échoue garde les dernières données : seul un premier échec s'affiche.
             setLoadError(code ?? "");
@@ -213,6 +217,21 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
     setEditing(on);
   }
 
+  /** Lien mort sous une commande : même traitement qu'à la lecture (message unique, relecture
+   * arrêtée, secret oublié s'il ne mène plus à rien). Vrai si c'est le cas. */
+  function deadUnder(err: unknown): boolean {
+    const code = err instanceof ApiError ? err.code : undefined;
+    if (!code || !GONE.has(code)) return false;
+    stopRef.current();
+    editingRef.current = false;
+    setEditing(false);
+    setConfirming(false);
+    setGone(true);
+    setView(null);
+    if (isDeadLinkCode(code)) forgetSecret(secret);
+    return true;
+  }
+
   /** Code de refus d'état, s'il en est un. */
   const stateCode = (err: unknown) =>
     err instanceof ApiError && err.code && STATE_CODES.has(err.code) ? err.code : null;
@@ -222,6 +241,7 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
     try {
       apply(n, await updateCandidature(secret, input));
     } catch (err) {
+      if (deadUnder(err)) return;
       const code = stateCode(err);
       // Erreur de champ ou réseau : le formulaire l'affiche et garde la saisie.
       if (!code) throw err;
@@ -244,6 +264,7 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
       setActionError(null);
       setConfirming(false);
     } catch (err) {
+      if (deadUnder(err)) return;
       const code = stateCode(err);
       if (code) {
         setActionError(errorText(code));

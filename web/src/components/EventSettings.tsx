@@ -6,13 +6,16 @@
 //   bornes par classe, enregistrés d'un seul bouton principal « Enregistrer », désactivé avec sa
 //   raison tant que rien n'a changé ou que la saisie est invalide.
 // - « Créneaux », en `open` seulement : suppression (confirmée si des joueurs l'ont coché) et ajout.
+// - « Dupliquer » : `/new` prérempli depuis la vue enregistrée, sauf les dates (`duplicateDraft`).
 // - « Annuler le raid », confirmé, en bas.
 //
 // Le brouillon part de la vue et la suit tant qu'il n'a pas de changement non enregistré ; il repart
-// de la vue que rend « Enregistrer ». Raid annulé : lecture seule, aucune action. Les commandes et la
-// relecture passent par la page (séquencement, refus d'état), qui rend l'issue de chaque geste.
+// de la vue que rend « Enregistrer ». Raid annulé : lecture seule, seul « Dupliquer » reste. Les
+// commandes et la relecture passent par la page (séquencement, refus d'état), qui rend l'issue de
+// chaque geste.
 
 import { useEffect, useId, useRef, useState, type FormEvent, type RefObject } from "react";
+import { useNavigate } from "react-router";
 import { labelOf } from "../api/reference";
 import type {
   FactionScope,
@@ -23,6 +26,7 @@ import type {
   UpdateEventSettings,
 } from "../api/types";
 import { t, useLang, type MessageKey } from "../i18n";
+import { duplicateDraft } from "../lib/duplicate";
 import {
   NOTE_MAX,
   SLOTS_MAX,
@@ -74,8 +78,29 @@ export function EventSettings(props: Props) {
   return <Editor {...props} />;
 }
 
-/** Raid annulé : le résumé et le lien Discord, sans aucun champ ni bouton. */
-function ReadOnly({ view, reference, now }: Props) {
+/** « Dupliquer » : un nouveau raid prérempli depuis la vue enregistrée, jamais depuis la saisie en
+ * cours, sauf les dates. Une navigation, pas une commande : rien n'est envoyé au serveur. Inactif
+ * pendant une commande, dont la vue rendue n'est pas encore là. */
+function Duplicate({ view, reference, busy }: Pick<Props, "view" | "reference" | "busy">) {
+  useLang();
+  const navigate = useNavigate();
+  return (
+    <section data-testid="settings-duplicate" className="border-t border-border pt-4">
+      <button
+        type="button"
+        disabled={busy !== null}
+        onClick={() => navigate("/new", { state: { duplicate: duplicateDraft(view, reference) } })}
+        className="min-h-tap w-full rounded-md border border-border px-4 text-label text-ink-primary disabled:text-ink-disabled"
+      >
+        {t("settings.duplicate")}
+      </button>
+      <p className="mt-2 text-meta text-ink-secondary">{t("settings.duplicateHint")}</p>
+    </section>
+  );
+}
+
+/** Raid annulé : le résumé et le lien Discord, sans aucun champ ; seul « Dupliquer » reste. */
+function ReadOnly({ view, reference, now, busy }: Props) {
   useLang();
   return (
     <div data-testid="settings" className="mt-4">
@@ -93,6 +118,9 @@ function ReadOnly({ view, reference, now }: Props) {
       ) : (
         <p className="mt-1 text-body text-ink-secondary">{t("organizer.noDiscord")}</p>
       )}
+      <div className="mt-6">
+        <Duplicate view={view} reference={reference} busy={busy} />
+      </div>
     </div>
   );
 }
@@ -578,6 +606,8 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
           <p className="mt-1 text-body text-ink-secondary">{t("settings.locked")}</p>
         )}
       </section>
+
+      <Duplicate view={view} reference={reference} busy={busy} />
 
       <section className={section}>
         <button

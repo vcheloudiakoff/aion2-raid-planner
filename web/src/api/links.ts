@@ -3,7 +3,8 @@
 // « Mes événements ». Tout passe par `lib/storage` : stockage absent ou cassé = aucun lien, écriture
 // ignorée (`false`), jamais d'exception. Les données relues sont assainies : une entrée invalide est
 // ignorée, les valides restent. Ce module ne fait aucune requête : l'appelant n'envoie au serveur que
-// le secret du chemin courant.
+// le secret du chemin courant. On n'y oublie un lien que sur un geste (« Oublier ») ou sur un lien
+// mort, jamais sur une erreur réseau ni sur un lien d'un autre droit.
 
 import { readJson, writeJson } from "../lib/storage";
 
@@ -121,4 +122,42 @@ export function forgetEvent(eventId: string): boolean {
     delete entry.join;
     entry.participants = {};
   });
+}
+
+/** Oublie les liens organisateur et candidature directe d'un événement ; ses candidatures restent.
+ * L'événement disparaît s'il ne reste rien. */
+export function forgetOrganizer(eventId: string): boolean {
+  return update(eventId, (entry) => {
+    delete entry.organizer;
+    delete entry.join;
+  });
+}
+
+/** Oublie toute case qui contient ce secret, quel que soit l'événement : lien mort ouvert depuis son
+ * chemin, dont on ne connaît pas toujours l'événement. Un lien organisateur mort emporte aussi le
+ * lien direct de son événement, comme `forgetOrganizer` : seul, il n'aurait ni ligne ni « Oublier ».
+ * Vrai si une case est retirée et l'écriture faite ; rien n'est écrit si aucune case ne le contient. */
+export function forgetSecret(secret: string): boolean {
+  if (!isSecret(secret)) return false;
+  const links = readLinks();
+  let found = false;
+  for (const [eventId, entry] of Object.entries(links)) {
+    if (entry.organizer === secret) {
+      delete entry.organizer;
+      delete entry.join;
+      found = true;
+    }
+    if (entry.join === secret) {
+      delete entry.join;
+      found = true;
+    }
+    for (const [candidatureId, s] of Object.entries(entry.participants)) {
+      if (s === secret) {
+        delete entry.participants[candidatureId];
+        found = true;
+      }
+    }
+    if (isEmpty(entry)) delete links[eventId];
+  }
+  return found && writeJson(LINKS_KEY, links);
 }

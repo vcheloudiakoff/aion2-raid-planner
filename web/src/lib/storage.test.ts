@@ -10,6 +10,7 @@ import {
   writeItem,
   writeJson,
 } from "./storage";
+import { spyStorageWrites } from "../test/dom";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -73,9 +74,7 @@ describe("storage", () => {
   });
 
   it("survives a full storage", () => {
-    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
-      throw new DOMException("full", "QuotaExceededError");
-    });
+    spyStorageWrites(new DOMException("full", "QuotaExceededError"));
     expect(writeItem("k", "v")).toBe(false);
   });
 });

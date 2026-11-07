@@ -5,11 +5,12 @@ process.env.TZ = "Asia/Tokyo";
 
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { resetClientForTests } from "../api/client";
 import type { OrganizerEvent } from "../api/types";
 import { resetLangForTests } from "../i18n";
 import { byText, click, fill, mount, type Mounted } from "../test/dom";
+import { duplicateDraft } from "../lib/duplicate";
 import { ORGANIZER, organizerEvent, reference } from "../test/fixtures";
 import { REFRESH_MS } from "../pages/EventPage";
 import { OrganizerPage } from "../pages/OrganizerPage";
@@ -62,12 +63,20 @@ async function flush() {
   });
 }
 
+/** État de navigation reçu par `/new`. */
+let newState: unknown;
+function NewProbe() {
+  newState = useLocation().state;
+  return <p data-testid="new-page">new page</p>;
+}
+
 /** Page rendue, onglet Réglages ouvert. */
 async function render() {
   m = mount(
     <MemoryRouter initialEntries={[`/o/${ORGANIZER}`]}>
       <Routes>
         <Route path="/o/:secret" element={<OrganizerPage reference={reference} />} />
+        <Route path="/new" element={<NewProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -212,10 +221,13 @@ describe("settings form", () => {
     expect(fieldset.contains(q('[data-testid="bound-c1"]'))).toBe(true);
     expect(removeButtons().every((b) => b.disabled)).toBe(true);
     expect(byText(settings(), "Annuler le raid").closest("button")!.disabled).toBe(true);
+    // « Dupliquer » attend la vue enregistrée.
+    expect(byText(settings(), "Dupliquer").closest("button")!.disabled).toBe(true);
     await act(async () => answer(json(viewWith({ note: "Go" }))));
     await flush();
     expect(save().textContent).toBe("Enregistrer");
     expect(save().closest("fieldset")!.disabled).toBe(false);
+    expect(byText(settings(), "Dupliquer").closest("button")!.disabled).toBe(false);
   });
 
   it("never overwrites an unsaved draft on refresh, but follows the view otherwise", async () => {
@@ -615,9 +627,10 @@ describe("cancellation", () => {
     await press(confirm);
     expect(posts(calls).map((c) => [c.url, sent(c)])).toEqual([["/api/organizer/cancellation", {}]]);
     expect(dialog()).toBeNull();
-    // Raid annulé : bandeau, onglet en lecture seule, sans aucune action.
+    // Raid annulé : bandeau, onglet en lecture seule ; seul « Dupliquer » reste.
     expect(byText(m.container, "Raid annulé")).toBeTruthy();
-    expect(settings().querySelectorAll("input, select, textarea, button")).toHaveLength(0);
+    expect(settings().querySelectorAll("input, select, textarea")).toHaveLength(0);
+    expect([...settings().querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Dupliquer"]);
     expect(settings().querySelector('[data-testid="summary"]')).not.toBeNull();
   });
 
@@ -631,6 +644,44 @@ describe("cancellation", () => {
     await press(inDialog("Annuler le raid"));
     expect(dialog()!.querySelector('[role="alert"]')!.textContent).toBe("Doucement : réessaie dans un moment.");
     expect(inDialog("Garder le raid")!.disabled).toBe(false);
+  });
+});
+
+describe("duplicate", () => {
+  const duplicate = () =>
+    [...q<HTMLElement>('[data-testid="settings-duplicate"]')!.querySelectorAll("button")].find(
+      (b) => b.textContent === "Dupliquer",
+    )!;
+
+  it("opens /new with a draft of the saved view, never the unsaved input, and sends nothing", async () => {
+    newState = undefined;
+    const calls = serve(() => json(organizerEvent));
+    await render();
+    fill(note(), "Pas encore enregistré");
+    expect(q('[data-testid="settings-duplicate"]')!.textContent).toContain(
+      "Un nouveau raid avec les réglages enregistrés, sans les dates. Une saisie pas encore enregistrée n'est pas reprise.",
+    );
+    // Avant « Annuler le raid ».
+    const cancel = byText(settings(), "Annuler le raid");
+    expect(duplicate().compareDocumentPosition(cancel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    click(duplicate());
+    expect(q('[data-testid="new-page"]')).not.toBeNull();
+    expect(newState).toEqual({ duplicate: duplicateDraft(organizerEvent, reference) });
+    expect(JSON.stringify(newState)).not.toContain("Pas encore enregistré");
+    expect(JSON.stringify(newState)).not.toContain(ORGANIZER);
+    expect(posts(calls)).toEqual([]);
+  });
+
+  it("is offered on a locked raid and on a cancelled one", async () => {
+    for (const status of ["locked", "cancelled"] as const) {
+      newState = undefined;
+      serve(() => json(viewWith({ status })));
+      await render();
+      click(duplicate());
+      expect(newState, status).toEqual({ duplicate: duplicateDraft(viewWith({ status }), reference) });
+      m.unmount();
+    }
+    m = mount(<div />);
   });
 });
 

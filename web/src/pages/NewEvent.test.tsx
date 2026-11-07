@@ -4,13 +4,14 @@ process.env.TZ = "Asia/Tokyo";
 
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation, type Location } from "react-router";
 import { resetClientForTests } from "../api/client";
 import { LINKS_KEY } from "../api/links";
 import { resetLangForTests } from "../i18n";
-import { byText, click, fill, mount, type Mounted } from "../test/dom";
+import { byText, click, fill, mount, type Mounted, spyStorageWrites } from "../test/dom";
 import { EVENT_ID, JOIN, ORGANIZER, created, reference } from "../test/fixtures";
 import type { ReferenceSet } from "../api/types";
+import type { DuplicateDraft } from "../lib/duplicate";
 import { NewEvent } from "./NewEvent";
 
 let m: Mounted;
@@ -51,11 +52,26 @@ async function flush() {
   });
 }
 
-function render(ref: ReferenceSet = reference) {
+/** Accès de test au routeur : emplacement courant et son état d'historique. */
+let here: Location;
+function Probe() {
+  here = useLocation();
+  return null;
+}
+
+function render(ref: ReferenceSet = reference, entry: string | Partial<Location> = "/new") {
   m = mount(
-    <MemoryRouter initialEntries={["/new"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/new" element={<NewEvent reference={ref} />} />
+        <Route
+          path="/new"
+          element={
+            <>
+              <NewEvent reference={ref} />
+              <Probe />
+            </>
+          }
+        />
         <Route path="/o/:secret" element={<p>organizer page</p>} />
       </Routes>
     </MemoryRouter>,
@@ -216,9 +232,7 @@ describe("new event form", () => {
 
   it("still shows the links, with a warning, when storage is unavailable", async () => {
     serve(createdReply);
-    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
-      throw new DOMException("blocked", "SecurityError");
-    });
+    spyStorageWrites(new DOMException("blocked", "SecurityError"));
     render();
     fill(slotDate(0), "2026-11-11T21:00");
     await submit();
@@ -331,5 +345,161 @@ describe("new event form", () => {
       "La création de raids est en pause. Les raids existants marchent toujours.",
     );
     expect(slotDate(0).value).toBe("2026-11-11T21:00");
+  });
+});
+
+describe("duplicate", () => {
+  const draft: DuplicateDraft = {
+    instance: "i1",
+    region: "r1",
+    factionScope: "asmodian",
+    note: "Vocal prêt",
+    discordUrl: "https://discord.gg/abcdef",
+    visibility: "unlisted",
+    minCp: 1200,
+    classBounds: { c1: { min: 1, max: 3 }, c2: { min: 2, max: 10 } },
+    slots: [{}, {}, { durationMin: 90 }],
+  };
+  const radio = (v: string) =>
+    [...m.container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((r) => r.value === v)!;
+  const selects = () => [...m.container.querySelectorAll<HTMLSelectElement>("select")].map((s) => s.value);
+  const bound = (id: string) =>
+    [...m.container.querySelectorAll<HTMLInputElement>(`[data-testid="bound-${id}"] input`)].map((i) => i.value);
+  const slotCount = () => m.container.querySelectorAll('[data-testid^="slot-"]').length;
+
+  it("prefills everything but the dates, one line per slot, then clears the navigation state", async () => {
+    const calls = serve(createdReply);
+    render(reference, { pathname: "/new", state: { duplicate: draft } });
+    await flush();
+    expect(selects()).toEqual(["i1", "r1"]);
+    expect(radio("asmodian").checked).toBe(true);
+    expect(slotCount()).toBe(3);
+    expect([0, 1, 2].map((n) => slotDate(n).value)).toEqual(["", "", ""]);
+    expect([0, 1, 2].map((n) => slotDuration(n).value)).toEqual(["", "", "90"]);
+    expect(q<HTMLTextAreaElement>("textarea").value).toBe("Vocal prêt");
+    expect(q<HTMLInputElement>('input[type="url"]').value).toBe("https://discord.gg/abcdef");
+    expect(q<HTMLInputElement>('label input[type="checkbox"]').checked).toBe(false);
+    expect(q<HTMLInputElement>('details input[type="number"]').value).toBe("1200");
+    expect(bound("c1")).toEqual(["1", "3"]);
+    expect(bound("c2")).toEqual(["2", "10"]);
+    expect(publish().disabled).toBe(true);
+    expect(byText(m.container, "Choisis la date et l'heure de chaque créneau.")).toBeTruthy();
+    // Consommé : l'entrée d'historique n'a plus d'état.
+    expect(here.pathname).toBe("/new");
+    expect(here.state).toBeNull();
+
+    fill(slotDate(0), "2026-11-11T21:00");
+    fill(slotDate(1), "2026-11-12T21:00");
+    fill(slotDate(2), "2026-11-13T21:00");
+    await submit();
+    expect(posts(calls)).toEqual([
+      {
+        instance: "i1",
+        region: "r1",
+        factionScope: "asmodian",
+        slots: [
+          { startsAt: "2026-11-11T12:00:00Z" },
+          { startsAt: "2026-11-12T12:00:00Z" },
+          { startsAt: "2026-11-13T12:00:00Z", durationMin: 90 },
+        ],
+        visibility: "unlisted",
+        note: "Vocal prêt",
+        discordUrl: "https://discord.gg/abcdef",
+        minCp: 1200,
+        classBounds: { c1: { min: 1, max: 3 }, c2: { min: 2, max: 10 } },
+        formToken: "tok",
+        website: "",
+      },
+    ]);
+  });
+
+  it("gives a blank form when the same history entry is opened again", async () => {
+    serve();
+    render(reference, { pathname: "/new", state: { duplicate: draft } });
+    await flush();
+    const reloaded = here;
+    m.unmount();
+    render(reference, reloaded);
+    await flush();
+    expect(slotCount()).toBe(1);
+    expect(q<HTMLTextAreaElement>("textarea").value).toBe("");
+    expect(radio("all").checked).toBe(true);
+    expect(q<HTMLInputElement>('label input[type="checkbox"]').checked).toBe(true);
+  });
+
+  it("falls back on a disabled instance or region, as for any input", async () => {
+    serve();
+    render(reference, { pathname: "/new", state: { duplicate: { ...draft, instance: "i_off", region: "r_off" } } });
+    await flush();
+    expect(selects()).toEqual(["i1", "r1"]);
+    expect(radio("asmodian").checked).toBe(true);
+    expect(bound("c1")).toEqual(["1", "3"]);
+  });
+
+  it("fits the bounds to the instance and adjusts the scope", async () => {
+    const calls = serve(createdReply);
+    render(reference, {
+      pathname: "/new",
+      state: {
+        duplicate: { ...draft, instance: "mono", factionScope: "all", classBounds: { c1: { min: 6, max: 8 }, c2: { min: 1, max: 10 } } },
+      },
+    });
+    await flush();
+    expect(selects()[0]).toBe("mono");
+    expect(radio("all").disabled).toBe(true);
+    expect(radio("elyos").checked).toBe(true);
+    expect(bound("c1")).toEqual(["4", "4"]);
+    expect(bound("c2")).toEqual(["1", "4"]);
+    for (const n of [0, 1, 2]) fill(slotDate(n), `2026-11-1${n + 1}T21:00`);
+    await submit();
+    expect(posts(calls)[0]).toMatchObject({
+      instance: "mono",
+      factionScope: "elyos",
+      classBounds: { c1: { min: 4, max: 4 }, c2: { min: 1, max: 4 } },
+    });
+  });
+
+  it("opens Options when the draft carries a minimum CP or bounds of its own, never otherwise", async () => {
+    const { minCp: _, ...noCp } = draft;
+    const usual = { c1: { min: 0, max: 10 }, c2: { min: 1, max: 10 } };
+    for (const [name, duplicate, open] of [
+      ["minimum CP", draft, true],
+      ["own bounds", { ...noCp, classBounds: { ...usual, c1: { min: 1, max: 3 } } }, true],
+      ["usual bounds", { ...noCp, classBounds: usual }, false],
+    ] as const) {
+      serve();
+      render(reference, { pathname: "/new", state: { duplicate } });
+      await flush();
+      expect(q<HTMLDetailsElement>("details").open, name).toBe(open);
+      m.unmount();
+    }
+    // Sans brouillon, Options reste replié.
+    serve();
+    render();
+    expect(q<HTMLDetailsElement>("details").open).toBe(false);
+  });
+
+  it("gives an added slot its own line, after the duplicated ones", async () => {
+    serve();
+    render(reference, { pathname: "/new", state: { duplicate: draft } });
+    await flush();
+    click(byText(m.container, "+ Ajouter un créneau"));
+    expect(slotCount()).toBe(4);
+    fill(slotDate(1), "2026-11-12T21:00");
+    expect(slotDate(1).value).toBe("2026-11-12T21:00");
+    expect(slotDate(3).value).toBe("");
+    expect(slotDuration(3).value).toBe("");
+    fill(slotDate(3), "2026-11-14T21:00");
+    expect([0, 1, 2, 3].map((n) => slotDate(n).value)).toEqual(["", "2026-11-12T21:00", "", "2026-11-14T21:00"]);
+    expect(slotDuration(2).value).toBe("90");
+  });
+
+  it("ignores a malformed state and starts blank", async () => {
+    serve();
+    render(reference, { pathname: "/new", state: { duplicate: { ...draft, slots: "x" } } });
+    await flush();
+    expect(slotCount()).toBe(1);
+    expect(q<HTMLTextAreaElement>("textarea").value).toBe("");
+    expect(here.state).toBeNull();
   });
 });

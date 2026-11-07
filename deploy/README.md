@@ -339,3 +339,89 @@ dernier push de l'epic.
 6. **Relecture des en-têtes.** Refaire les deux `curl -D -` du §9 et vérifier la liste attendue :
    HSTS, CSP exacte, `referrer-policy`, `x-content-type-options`, `x-app-build` égal au commit,
    `cache-control: no-store` sur `/api/*`, aucun en-tête `server`.
+
+## 15. Vérification de fin d'epic 2
+
+Le signal de succès de l'epic 2 (`_bmad-output/specs/spec-epic-2-creer-candidater/SPEC.md`), pas à
+pas. Préalables :
+
+- le §14 de l'epic 1 a été fait ;
+- les commits de l'epic sont poussés sur `main`, avec le feu vert de Vincent ;
+- `crates/server/migrations/0002_events.sql` a été relue avant ce push : une fois poussée, elle est
+  immuable (AD-2, §13).
+
+Dans ce qui suit, `<ID>` est l'identifiant public du raid, les 22 caractères qui suivent `/e/` dans
+le lien public. Aucun lien secret (`/o/`, `/j/`, `/p/`) ne se colle dans un terminal, un ticket ni un
+commit.
+
+1. **Créer un raid sur téléphone.** Sur un téléphone, ouvrir `https://raid.example.org/`, toucher
+   « Créer un raid », choisir Ludra, la région et « Toutes », ajouter trois créneaux, « Publier ». Le
+   tout en moins de 60 s, chronomètre en main. Copier le lien d'organisateur dans ses messages privés
+   Discord. Depuis un poste quelconque :
+
+   ```sh
+   curl -sS https://raid.example.org/api/events/<ID> | grep -o '"instance":"[^"]*"'   # "instance":"ludra"
+   curl -sS https://raid.example.org/api/events/<ID> | grep -o '"startsAt"' | wc -l    # 3
+   ```
+
+2. **Poster les liens.** Poster le lien direct (`/j/`) et le lien public (`/e/`) sur Discord. Les trois
+   pages secrètes et un raid inconnu ne s'indexent pas (AD-3) :
+
+   ```sh
+   for path in o/x j/x p/x e/AAAAAAAAAAAAAAAAAAAAAA; do
+     curl -sS -D - -o /dev/null "https://raid.example.org/$path" | grep -i '^x-robots-tag'
+   done
+   # x-robots-tag: noindex, quatre fois
+   ```
+
+3. **Candidatures.** Au moins cinq joueurs, d'au moins deux serveurs, candidatent depuis leur
+   téléphone, par `/j` ou `/e`, chacun en moins de 30 s. Sur `/o`, onglet Candidatures, chaque ligne
+   apparaît en 10 s au plus, avec un liseré or, et les `Pseudo[SRV]` des lignes portent au moins deux
+   tags `[SRV]` différents. Le compte public suit :
+
+   ```sh
+   curl -sS https://raid.example.org/api/events/<ID> | grep -o '"countsByClass":{[^}]*}'
+   # la somme des valeurs vaut au moins 5
+   ```
+
+4. **Accepter et refuser.** Depuis `/o`, accepter au moins un joueur et en refuser un autre. Chaque
+   joueur rouvre son lien `/p` et lit son statut : « Acceptée », « Refusée » ou « En attente de
+   l'organisateur ». Le bouton « Rejoindre le Discord » n'apparaît que chez un joueur accepté.
+5. **Aucune donnée nominative publique.** La lecture publique ne contient ni pseudo ni lien Discord
+   (AD-4 *Données exposées*). `<PSEUDO>` est le pseudo d'un candidat réel, absent de la note du raid ;
+   il se tape dans le terminal seulement, jamais dans un ticket ni un commit :
+
+   ```sh
+   curl -sS https://raid.example.org/api/events/<ID> | grep -c '"pseudo"'        # 0
+   curl -sS https://raid.example.org/api/events/<ID> | grep -ci -- '<PSEUDO>'    # 0
+   curl -sS https://raid.example.org/api/events/<ID> | grep -c '"discordUrl"'    # 0
+   ```
+
+6. **Liens et appareils.** Sur le téléphone de l'organisateur :
+   - l'accueil montre « Sur cet appareil » avec une ligne « Organisateur » (instance et date) ; sur
+     le téléphone d'un joueur, une ligne « Candidat » ;
+   - « Oublier » demande confirmation, « Garder » ne change rien, « Oublier » retire la ligne ;
+   - sur `/o`, onglet Réglages, la puce « Ton lien d'organisateur » copie l'URL complète `/o/…` ; la
+     coller dans un autre navigateur ouvre le raid, qui y apparaît ensuite dans « Sur cet appareil » ;
+   - sur `/p`, chez un joueur, la puce « Ton lien personnel » copie de même l'URL complète `/p/…`, qui
+     s'ouvre dans un autre navigateur ;
+   - « Dupliquer » ouvre « Créer un raid » prérempli (instance, région, factions, note, Discord,
+     nombre de créneaux ; « Options » ouvert si un CP minimum ou des bornes sont repris), sans aucune
+     date ; recharger la page donne un formulaire vierge ;
+   - en navigation privée, ouvrir le lien `/p` d'un joueur : la page marche ;
+   - stockage refusé, sur un navigateur de bureau : bloquer les données du site pour
+     `raid.example.org` dans les réglages du navigateur (Chrome : `chrome://settings/content/siteData`,
+     « Non autorisés à enregistrer des données », Ajouter ; Firefox : *Paramètres → Vie privée et
+     sécurité → Cookies et données de sites → Gérer les exceptions*, Bloquer). Puis ouvrir un lien
+     `/p` : la page marche et affiche « Ce navigateur ne gardera pas le lien : copie-le maintenant. » ;
+     ouvrir le lien `/o` : la page marche et affiche « Ce navigateur ne gardera pas ce lien :
+     copie-le maintenant, depuis l'onglet Réglages. ». Retirer ensuite l'exception ;
+   - lien mort simulé, dans les outils de développement d'un navigateur de bureau
+     (*Application → Local Storage*, clé `links.v1`) : dans le secret `organizer` d'un raid, remplacer
+     un caractère par une autre lettre ou un autre chiffre (`A-Z`, `a-z`, `0-9`), puis **recharger
+     l'accueil** avant de toucher sa ligne. La page affiche « Ce lien ne mène à rien. Il a peut-être
+     expiré. » ; de retour sur l'accueil, la ligne a disparu. Changer de même un caractère de
+     l'identifiant d'un raid (la clé de son entrée), puis recharger l'accueil : sa ligne apparaît, puis
+     disparaît dès la lecture publique.
+7. **Sans compte.** Pendant toute l'opération, personne ne demande sur Discord comment se connecter,
+   créer un compte ou récupérer un mot de passe.

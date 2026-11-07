@@ -24,14 +24,14 @@ export function App() {
       <Header />
       <Banners lastDataAt={reference?.fetchedAt ?? null} />
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<Home reference={reference?.data ?? null} />} />
         <Route path="/new" element={<NewEvent reference={reference?.data ?? null} />} />
         <Route path="/o/:secret" element={<OrganizerPage reference={reference?.data ?? null} />} />
         <Route path="/e/:id" element={<EventPage reference={reference?.data ?? null} mode="public" />} />
         <Route path="/j/:secret" element={<EventPage reference={reference?.data ?? null} mode="join" />} />
         <Route path="/p/:secret" element={<ParticipantPage reference={reference?.data ?? null} />} />
         {/* Sans redirection : l'adresse reste intacte pour les routes des stories suivantes. */}
-        <Route path="*" element={<Home />} />
+        <Route path="*" element={<Home reference={reference?.data ?? null} />} />
       </Routes>
     </BrowserRouter>
   );
