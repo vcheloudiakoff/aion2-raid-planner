@@ -2,7 +2,7 @@
 name: aion2-raid-planner
 status: final
 created: '2026-11-05'
-updated: '2026-11-06'
+updated: '2026-11-07'
 sources:
   - _bmad-output/forge/aion2-raid-sans-compte/forged-idea.md
   - _bmad-output/planning-artifacts/architecture/architecture-aion2-raid-planner-2026-11-05/ARCHITECTURE-SPINE.md
@@ -39,7 +39,7 @@ avec une maquette, cette spine et `DESIGN.md` font foi.
 | Liens créés | `/new` (étape 2) | soumission de la création | organisateur | les trois liens, affichés une fois, à copier |
 | Page de l'événement | `/e/<id>` | liste, Discord | public | résumé sans liste nominative, formulaire de candidature (CAP-2) |
 | Candidature directe | `/j/<secret>` | lien direct posté par l'organisateur | direct | même formulaire, accepté d'office |
-| Ma candidature | `/p/<secret>` | après candidature, « Sur cet appareil » | participant | statut, placement, salle, confirmation, modifier, se retirer (CAP-5, CONTACT) |
+| Ma candidature | `/p/<secret>` | après candidature, « Sur cet appareil » | participant | statut, placement, salle, coéquipiers, confirmation, modifier, se retirer (CAP-5, CONTACT) |
 | Organisateur : Candidatures | `/o/<secret>` (onglet par défaut) | Liens créés, « Sur cet appareil » | organisateur | trier, accepter, refuser, copier `Pseudo[SRV]` |
 | Organisateur : Disponibilités | `/o/<secret>` onglet | onglets | organisateur | grille joueurs × créneaux, couverture par classe, Verrouiller (CAP-3) |
 | Organisateur : Composition | `/o/<secret>` onglet, après verrouillage | onglets | organisateur | proposition du solveur ou placement à la main (COMP), chargé à la demande |
@@ -112,7 +112,7 @@ Comportemental. Les spécifications visuelles sont dans `DESIGN.md.Components`.
 | Jeton de formulaire expiré | formulaires | Nouveau jeton et nouvel essai automatique, une fois, sans rien dire. Si ça échoue encore, message d'erreur. |
 | Brouillon de composition et données changées | Composition | Bandeau « 2 candidatures ont changé depuis ton brouillon » + « Voir » ; le brouillon n'est jamais écrasé. |
 | Doublon `Pseudo[SRV]` | Candidatures, grille | Badge « doublon » sur les deux lignes. L'organisateur choisit laquelle refuser. |
-| Événement déverrouillé | `/p` | Le placement et la salle disparaissent de la vue participant. Message : « Le raid est revenu en préparation. » |
+| Événement déverrouillé | `/p` | Le placement, la salle et les coéquipiers disparaissent de la vue participant. Message : « Le raid est revenu en préparation. » |
 | Événement annulé | `/e`, `/p` | Bandeau « Raid annulé ». Lecture seule jusqu'à la purge. |
 | Confirmation demandée | `/p` | Carte en tête de page : « Tu confirmes pour mar. 21:00 ? » Oui / Non, échéance en heure locale. |
 | Échéance dépassée | `/p`, Salle | Côté participant : « Trop tard pour répondre. Préviens l'organisateur sur Discord. » Côté organisateur : badge « expirée ». Aucun effet sur le placement. |

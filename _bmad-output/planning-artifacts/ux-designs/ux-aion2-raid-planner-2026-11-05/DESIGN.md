@@ -3,7 +3,7 @@ name: aion2-raid-planner
 description: Outil de booking de raids, sobre et dense, sombre par défaut, lisible d'une main sur un téléphone de 360 px à côté du jeu et de Discord.
 status: final
 created: '2026-11-05'
-updated: '2026-11-06'
+updated: '2026-11-07'
 sources:
   - _bmad-output/forge/aion2-raid-sans-compte/forged-idea.md
   - _bmad-output/planning-artifacts/architecture/architecture-aion2-raid-planner-2026-11-05/ARCHITECTURE-SPINE.md
@@ -226,12 +226,14 @@ au-dessus du contenu. Tout le reste se distingue par le ton de surface et une bo
 - **Cellule de grille** (`grid-cell`) : 44 × 44 px. Disponible : fond `available` et coche ✓. Non
   disponible : fond `sunken` et tiret. Créneau préféré : petite étoile en coin.
 - **Ligne de candidature** : `Pseudo` en `label`, `[SRV]` et classe en `meta`, CP aligné à droite en
-  chiffres tabulaires. Point de faction devant le serveur. Badge de statut à droite si différent
-  d'`accepted`. Doublon `Pseudo[SRV]` : badge « doublon » en `danger`.
+  chiffres tabulaires. Point de faction devant le serveur. Badge de statut à droite, pour tous les
+  statuts. Doublon `Pseudo[SRV]` : badge « doublon » en `danger`.
 - **Slot de salle** (`room-slot`) : numéro du slot, rôle attendu en `meta`, puis le titulaire
   (`Pseudo[SRV]` en `mono`) ou « libre » en `ink-disabled`. Cible de placement active : bordure or
   pointillée.
-- **Badge de statut** : `pending` en bleu, `rejected` et `withdrawn` en `ink-disabled` barré, « Proposé »
+- **Badge de statut** : bordure et texte de la couleur du statut sur un fond teinté à 10 % : `accepted` en
+  `available` (vert), `pending` en `pending` (bleu), `rejected` en `danger` (rouge) ; `withdrawn` en
+  `ink-disabled` barré ; le libellé accompagne toujours la couleur. « Proposé »
   (placement du solveur non appliqué) en bordure or sur fond transparent.
 - **Feuille du bas** : la réserve des non-placés en composition, et les choix de langue et de thème.
   Poignée visible, fermeture par glissement vers le bas ou par le bouton Fermer.

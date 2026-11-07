@@ -46,7 +46,7 @@ de succès du produit.
   - **success:** « Copier le message Discord » produit, depuis un gabarit des locales fr et en, l'instance, l'heure en `<t:UNIX:F>`, le nom de salle, les titulaires par équipe en `Pseudo[SRV]`, le banc et le lien public `/e/` ; test vitest : aucun secret de lien dans le message.
 - **CAP-6**
   - **intent:** Chaque joueur sait, en rouvrant son lien, s'il joue, où et quand (verrou Contact).
-  - **success:** en `locked`, `/p` affiche « Titulaire · Équipe 2, slot 4 · Soutien » ou « Banc · G1 · jeu. 21:00 » ou « Non placé », avec le créneau et le nom de salle à copier ; en `open`, ces informations disparaissent et « Le raid est revenu en préparation. » s'affiche ; la région live n'annonce que ces changements.
+  - **success:** en `locked`, `/p` affiche « Titulaire · Équipe 2, slot 4 · Soutien » ou « Banc · G1 · jeu. 21:00 » ou « Non placé », avec le créneau et le nom de salle à copier ; un titulaire voit la liste « Ton équipe » (`Pseudo[SRV]` et classe des autres titulaires de son Équipe), un joueur au banc celle de son groupe (titulaires des deux Équipes, par Équipe) ; test HTTP : aucun coéquipier pour un participant non placé, non `accepted`, ou sur un événement `open`, et jamais d'autre champ que `pseudoSrv` et `class` ; en `open`, ces informations disparaissent et « Le raid est revenu en préparation. » s'affiche ; la région live n'annonce que ces changements.
 
 ## Constraints
 
@@ -72,7 +72,7 @@ de succès du produit.
 - « Tri » se lit ici comme le tri et les filtres de la grille ; accepter et refuser sont livrés en epic 2.
 - `ROOM_NAME_TEMPLATE` par défaut : `{label}-{code}`, suivi de ` {cp}+` si `min_cp` est défini (nouvelle variable de cet epic, voir `placement-et-salle.md`).
 - Le brouillon de composition vit dans la mémoire de l'onglet ; un rechargement le perd.
-- `ParticipantView` ne montre que le placement du participant et le nom de salle, pas la salle complète.
+- `ParticipantView` montre le placement du participant, le nom de salle et ses coéquipiers (`Pseudo[SRV]` et classe : son Équipe pour un titulaire, les titulaires de son groupe pour un joueur au banc) ; jamais le banc aux titulaires, jamais la salle d'un autre groupe.
 
 ## Open Questions
 

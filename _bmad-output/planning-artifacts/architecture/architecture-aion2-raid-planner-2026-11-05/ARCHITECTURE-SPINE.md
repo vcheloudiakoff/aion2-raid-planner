@@ -7,7 +7,7 @@ paradigm: 'monolithe modulaire en couches, noyau pur : un binaire, un conteneur,
 scope: 'v1 entière : serveur Rust, SPA React embarquée, conteneur sur le NAS, edge VPS existant, déploiement par runner'
 status: final
 created: '2026-11-05'
-updated: '2026-11-05'
+updated: '2026-11-07'
 binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, COMP, ROOM, RECONF, CONTACT, ADMIN, I18N, SEC, OPS, PERF]
 sources:
   - _bmad-output/forge/aion2-raid-sans-compte/forged-idea.md
@@ -170,7 +170,10 @@ Sens unique : une couche ne dépend que de celles à sa droite. `domain` ne dép
   - *Données exposées* : `PublicEvent` (`/e/`, liste) porte les attributs de l'événement sans
     `discord_url` ni `note` longue, les créneaux et les comptes par classe et par rôle ; jamais la liste
     nominative (`[ASSUMPTION]`). `discord_url` n'est servi que sous droit organisateur ou sous droit
-    participant `accepted`.
+    participant `accepted`. Sous droit participant, et seulement pour une candidature `accepted` placée
+    d'un événement `locked`, `ParticipantView` porte ses coéquipiers : `Pseudo[SRV]` et classe, rien
+    d'autre, des autres titulaires de la même équipe (même groupe, même Équipe) pour un titulaire, des
+    titulaires de son groupe pour un joueur au banc (décision de Vincent, 2026-11-07).
   - Toute écriture passe par une commande de `app` (AD-16).
 
 ```mermaid

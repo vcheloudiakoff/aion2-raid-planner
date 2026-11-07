@@ -42,10 +42,13 @@
 - id: "3-5"
   title: Placement côté participant et vrai raid
   description: >-
-    `ParticipantView` enrichi (placement, créneau, nom de salle) et état « revenu en préparation » sur
-    `/p` ; fin d'epic : Vincent monte un vrai raid de bout en bout sans solveur (SPEC CAP-6, success signal).
+    `ParticipantView` enrichi (placement, créneau, nom de salle, coéquipiers en `Pseudo[SRV]` et classe)
+    et état « revenu en préparation » sur `/p` ; fin d'epic : Vincent monte un vrai raid de bout en bout
+    sans solveur (SPEC CAP-6, success signal).
   spec_checkpoint: false
   done_checkpoint: true
   invoke_dev_with: >-
     Le raid réel est joué par Vincent : la story se termine par une liste de vérification à lui remettre,
-    pas par une affirmation de l'agent.
+    pas par une affirmation de l'agent. Coéquipiers : test HTTP qui vérifie qu'un participant non placé,
+    non accepted, ou sur un événement open n'en reçoit aucun, et que chaque coéquipier n'a que `pseudoSrv`
+    et `class`.
