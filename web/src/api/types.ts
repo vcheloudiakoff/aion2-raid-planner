@@ -163,9 +163,12 @@ export interface CreatedCandidature {
   links: { participant: string };
 }
 
-/** `GET /api/participant` et réponse des commandes du participant, sous son lien `/p/` : sa seule
+/** `GET /api/participant` et réponse des commandes du participant, sous son lien `/p/` : sa
  * candidature et l'événement public. `discordUrl` présent seulement si `accepted` et que l'événement
- * a un lien. Placement, salle et confirmation arrivent avec les epics 3 et 5. */
+ * a un lien. `placement` et `teammates` présents seulement en `locked`, pour une candidature
+ * `accepted` placée dans un groupe retenu. `backInPreparation` présent (et vrai) seulement pour une
+ * candidature `accepted` d'un événement `open` après un déverrouillage. La confirmation arrive avec
+ * l'epic 5. */
 export interface ParticipantView {
   eventId: string;
   candidatureId: string;
@@ -178,6 +181,34 @@ export interface ParticipantView {
   availabilities: { slotId: string; preferred: boolean }[];
   event: PublicEvent;
   discordUrl?: string;
+  placement?: ParticipantPlacement;
+  /** Titulaire : une entrée, son équipe et ses autres titulaires ; banc : une entrée par équipe de
+   * son groupe, dans l'ordre. Membres triés par slot, éventuellement aucun. */
+  teammates?: TeammateParty[];
+  backInPreparation?: true;
+}
+
+/** Place du participant. `groupNumber` : rang parmi les groupes retenus (« G1 »). */
+export interface ParticipantPlacement {
+  groupNumber: number;
+  slotId: string;
+  startsAt: string;
+  roomName: string;
+  seat: ParticipantSeat;
+}
+
+export type ParticipantSeat = { kind: "starter"; party: number; index: number } | { kind: "bench"; benchIndex: number };
+
+/** Une équipe vue par le participant : son numéro et ses coéquipiers visibles. */
+export interface TeammateParty {
+  party: number;
+  members: Teammate[];
+}
+
+/** Un coéquipier visible : `Pseudo[SRV]` composé par le serveur et sa classe, rien d'autre. */
+export interface Teammate {
+  pseudoSrv: string;
+  class: string;
 }
 
 /** Lien par lequel une candidature est arrivée : `/j/` direct, `/e/` public. */

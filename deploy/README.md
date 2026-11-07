@@ -425,3 +425,80 @@ commit.
      disparaît dès la lecture publique.
 7. **Sans compte.** Pendant toute l'opération, personne ne demande sur Discord comment se connecter,
    créer un compte ou récupérer un mot de passe.
+
+## 16. Vérification de fin d'epic 3
+
+Le signal de succès de l'epic 3 (`_bmad-output/specs/spec-epic-3-organiser/SPEC.md`) : un vrai raid
+Sanctuaire à 10 monté de bout en bout avec l'outil déployé. Chaque case se coche à la main, pendant
+le vrai raid ; rien ne se coche d'avance. Préalables :
+
+- les §14 et §15 ont été faits ;
+- les commits de l'epic sont poussés sur `main`, avec le feu vert de Vincent ;
+- `crates/server/migrations/0003_groups.sql` a été relue avant ce push : une fois poussée, elle est
+  immuable (AD-2, §13).
+
+Comme au §15, `<ID>` est l'identifiant public du raid, et aucun lien secret (`/o/`, `/j/`, `/p/`) ne
+se colle dans un terminal, un ticket ni un commit.
+
+1. [ ] **Avant le raid : build et sauvegarde.** Le NAS fait tourner le build de l'epic 3 : depuis
+   un poste quelconque, `x-app-build` vaut le commit de `main` qui contient le dernier commit de
+   l'epic.
+
+   ```sh
+   curl -sS -D - -o /dev/null https://raid.example.org/api/health | grep -i '^x-app-build'
+   git rev-parse origin/main   # même valeur, après git fetch
+   ```
+
+   Puis une sauvegarde manuelle sur le NAS (§10) ; son nom s'affiche. Elle est supprimée deux jours
+   après, comme toute `pre-deploy-*`.
+
+   ```sh
+   cd ~aion2-deploy/aion2-raid-planner
+   docker compose -f deploy/docker-compose.yml exec -T server /server backup pre-deploy
+   ```
+
+2. [ ] **Créer et réunir.** Sur un téléphone, créer un raid Ludra avec plusieurs créneaux, puis poster
+   le lien direct et le lien public. Réunir au moins 10 candidatures `accepted`, d'au moins deux
+   serveurs, idéalement des deux factions. Sur `/o`, onglet Candidatures, les `Pseudo[SRV]` portent
+   au moins deux tags `[SRV]` différents.
+3. [ ] **Lire la grille et choisir la date.** Sur `/o`, onglet Disponibilités, sur téléphone : la grille
+   ne défile pas horizontalement, le pied de colonne compte les disponibles parmi les acceptés, et
+   toucher un créneau affiche sa couverture par classe. Choisir la date d'après la grille.
+4. [ ] **Verrouiller en deux touchers.** « Verrouiller », puis « Verrouiller 1 groupe ». La feuille
+   coche d'office le créneau qui a le plus de disponibles : si c'est la date choisie, deux touchers
+   suffisent. Les onglets Composition et Salle apparaissent, la grille passe en lecture seule.
+5. [ ] **Placer à la main.** Onglet Composition : placer dix titulaires (Équipe 1 et Équipe 2) et au
+   moins un joueur au banc, à la main, puis « Enregistrer ». Recharger la page : le placement est
+   toujours là.
+6. [ ] **Créer la salle.** Onglet Salle : copier le nom de salle depuis sa puce, créer la salle en jeu
+   en suivant la recette (instance, nom, « Faction : All » si toutes factions), puis vérifier que
+   chaque slot de la salle en jeu correspond à la carte (équipe, numéro, `Pseudo[SRV]`).
+7. [ ] **Rien de nominatif en public.** La lecture publique ne contient ni nom de salle ni pseudo.
+   `<PSEUDO>` est le pseudo d'un joueur placé, absent de la note du raid ; il se tape dans le
+   terminal seulement, jamais dans un ticket ni un commit :
+
+   ```sh
+   curl -sS https://raid.example.org/api/events/<ID> | grep -c '"roomName"'    # 0
+   curl -sS https://raid.example.org/api/events/<ID> | grep -c '"pseudo'       # 0
+   curl -sS https://raid.example.org/api/events/<ID> | grep -ci -- '<PSEUDO>'  # 0
+   ```
+
+8. [ ] **Message Discord.** « Copier le message Discord », le coller dans le salon du raid. L'heure
+   s'affiche dans le fuseau de chaque lecteur (au moins deux joueurs le confirment) et le message ne
+   contient que le lien public `/e/` : aucun `/o/`, `/j/` ni `/p/`.
+9. [ ] **Chacun voit sa place.** Chaque joueur placé ouvre son lien `/p` :
+   - un titulaire lit « Titulaire · Équipe N, slot M · Rôle », le créneau, le nom de salle à copier et
+     « Ton équipe », avec les seuls autres titulaires de son équipe ;
+   - un joueur au banc lit « Banc · G1 · » suivi du créneau, et « Ton groupe », avec les titulaires
+     des deux équipes ;
+   - un joueur `pending` ne voit ni place, ni salle, ni coéquipier.
+10. [ ] **Non placé.** Un joueur `accepted` sans place (accepté après l'enregistrement, ou laissé hors
+    de la composition) ouvre son lien `/p` : il lit « Non placé », sans salle ni coéquipier.
+11. [ ] **Déverrouiller, puis reverrouiller.** Noter le nom de salle. Sur `/o`, onglet Réglages,
+    « Déverrouiller » : sur `/p`, un joueur placé lit « Le raid est revenu en préparation. », sans
+    place, salle ni coéquipier. Reverrouiller le même créneau : sur `/p`, la place revient, et le nom
+    de salle est celui noté.
+12. [ ] **La salle se trouve par son nom.** À l'heure du raid, les joueurs trouvent la salle en jeu par
+    son nom, copié depuis `/p` ou depuis le message Discord, sans qu'on la leur montre autrement.
+13. [ ] **Jouer le raid.** La salle se remplit, le raid est joué. Pendant toute l'opération, personne ne
+    demande sur Discord comment se connecter, créer un compte ou récupérer un mot de passe.

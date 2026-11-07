@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate, type NavigateFunction } from "react-router";
 import { resetClientForTests } from "../api/client";
 import { LINKS_KEY } from "../api/links";
-import type { CandidatureStatus, ParticipantView } from "../api/types";
+import type { CandidatureStatus, ParticipantPlacement, ParticipantView } from "../api/types";
 import { resetLangForTests } from "../i18n";
 import { byText, click, fill, key, mount, type Mounted, spyStorageWrites } from "../test/dom";
 import {
@@ -680,6 +680,180 @@ describe("withdraw", () => {
     await act(async () => confirm.click());
     await flush();
     expect(dialog()!.querySelector('[role="alert"]')!.textContent).toBe("Doucement : réessaie dans un moment.");
+  });
+});
+
+describe("placement", () => {
+  const seat = (patch: Partial<ParticipantPlacement> = {}): ParticipantPlacement => ({
+    groupNumber: 1,
+    slotId: "slot_a",
+    startsAt: "2030-01-08T20:00:00Z",
+    roomName: "Ludra-7KQ2",
+    seat: { kind: "starter", party: 2, index: 4 },
+    ...patch,
+  });
+  /** Titulaire de G1, Équipe 2 slot 4, avec deux coéquipiers ; `patch` sur la vue. */
+  const starterView = (patch: Partial<ParticipantView> = {}) =>
+    viewWith(
+      {
+        status: "accepted",
+        discordUrl: "https://discord.gg/abcdef",
+        placement: seat(),
+        teammates: [
+          {
+            party: 2,
+            members: [
+              { pseudoSrv: "Kael[SA]", class: "c2" },
+              { pseudoSrv: "Lio[SB]", class: "c1" },
+            ],
+          },
+        ],
+        ...patch,
+      },
+      { status: "locked" },
+    );
+  const benchView = (groupNumber = 1) =>
+    starterView({
+      placement: seat({ groupNumber, seat: { kind: "bench", benchIndex: 1 } }),
+      teammates: [
+        { party: 1, members: [{ pseudoSrv: "Aldo[SA]", class: "c2" }] },
+        {
+          party: 2,
+          members: [
+            { pseudoSrv: "Kael[SA]", class: "c2" },
+            { pseudoSrv: "Lio[SB]", class: "c1" },
+          ],
+        },
+      ],
+    });
+  const line = () => q<HTMLElement>('[data-testid="placement-line"]')?.textContent ?? null;
+  const mates = (sel = '[data-testid="teammates"]') =>
+    [...m.container.querySelectorAll(`${sel} li`)].map((li) => li.textContent);
+
+  it("starter: the line with the role of their class, between the status and the Discord link", async () => {
+    serve(() => json(starterView()));
+    await render();
+    expect(line()).toBe("Titulaire · Équipe 2, slot 4 · Soin");
+    // Créneau en heure locale (UTC+9).
+    expect(q('[data-testid="placement-slot"]')!.textContent).toBe("Créneaumer. 9 janv. 2030 · 05:00");
+    const status = q('[data-testid="status"]')!;
+    const placement = q('[data-testid="placement"]')!;
+    const discord = byText(m.container, "Rejoindre le Discord")!;
+    expect(status.compareDocumentPosition(placement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(placement.compareDocumentPosition(discord) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("starter: « Ton équipe » lists Pseudo[SRV] in mono and the class label", async () => {
+    serve(() => json(starterView()));
+    await render();
+    const team = q<HTMLElement>('[data-testid="teammates"]')!;
+    expect(team.querySelector("h3")!.textContent).toBe("Ton équipe");
+    expect(mates()).toEqual(["Kael[SA]Classe Dégâts", "Lio[SB]Classe Soin"]);
+    expect(team.querySelector("li .font-mono")!.textContent).toBe("Kael[SA]");
+    expect(team.querySelector('[data-testid^="teammates-party-"]')).toBeNull();
+  });
+
+  it("bench: the line names the group and the slot, « Ton groupe » is grouped by party", async () => {
+    serve(() => json(benchView(2)));
+    await render();
+    expect(line()).toBe("Banc · G2 · mer. 05:00");
+    const team = q<HTMLElement>('[data-testid="teammates"]')!;
+    expect(team.querySelector("h3")!.textContent).toBe("Ton groupe");
+    expect(q('[data-testid="teammates-party-1"] h4')!.textContent).toBe("Équipe 1");
+    expect(mates('[data-testid="teammates-party-1"]')).toEqual(["Aldo[SA]Classe Dégâts"]);
+    expect(q('[data-testid="teammates-party-2"] h4')!.textContent).toBe("Équipe 2");
+    expect(mates('[data-testid="teammates-party-2"]')).toEqual(["Kael[SA]Classe Dégâts", "Lio[SB]Classe Soin"]);
+  });
+
+  it("placed with no visible teammate: the heading and « Personne d'autre n'est placé pour l'instant. »", async () => {
+    serve(() => json(starterView({ teammates: [{ party: 2, members: [] }] })));
+    await render();
+    const team = q<HTMLElement>('[data-testid="teammates"]')!;
+    expect(team.querySelector("h3")!.textContent).toBe("Ton équipe");
+    expect(q('[data-testid="teammates-alone"]')!.textContent).toBe("Personne d'autre n'est placé pour l'instant.");
+    expect(team.querySelectorAll("li")).toHaveLength(0);
+  });
+
+  it("copies the room name from its chip", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true, writable: true });
+    serve(() => json(starterView()));
+    await render();
+    const chip = [...m.container.querySelectorAll<HTMLButtonElement>('[data-testid="placement"] button')].find(
+      (b) => b.textContent === "Ludra-7KQ2",
+    )!;
+    expect(chip.getAttribute("aria-label")).toContain("Nom de salle");
+    await click(chip);
+    await flush();
+    expect(writeText).toHaveBeenCalledWith("Ludra-7KQ2");
+  });
+
+  it("accepted without a seat in a locked raid: « Non placé », no slot, room nor teammates", async () => {
+    serve(() => json(viewWith({ status: "accepted" }, { status: "locked" })));
+    await render();
+    expect(line()).toBe("Non placé");
+    expect(q('[data-testid="placement-slot"]')).toBeNull();
+    expect(q('[data-testid="teammates"]')).toBeNull();
+    expect(m.container.textContent).not.toContain("Nom de salle");
+  });
+
+  it("no placement line unless the raid is locked and the candidature accepted", async () => {
+    for (const v of [
+      viewWith({ status: "pending" }, { status: "locked" }),
+      viewWith({ status: "accepted" }, { status: "open" }),
+    ]) {
+      serve(() => json(v));
+      await render();
+      expect(q('[data-testid="placement"]')).toBeNull();
+      m.unmount();
+    }
+    m = mount(<div />);
+  });
+
+  it("back in preparation: the message, without seat nor teammates", async () => {
+    serve(() => json(viewWith({ status: "accepted", backInPreparation: true })));
+    await render();
+    expect(q('[data-testid="back-in-preparation"]')!.textContent).toBe("Le raid est revenu en préparation.");
+    expect(q('[data-testid="placement"]')).toBeNull();
+    expect(q('[data-testid="teammates"]')).toBeNull();
+  });
+
+  it("the live region announces a placement change, and nothing on a room rename", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let current: ParticipantView = viewWith({ status: "accepted" }, { status: "locked" });
+    serve(() => json(current));
+    await render();
+    expect(line()).toBe("Non placé");
+    expect(live().textContent).toBe("");
+    current = benchView();
+    await tick();
+    expect(live().textContent).toBe("Banc · G1 · mer. 05:00");
+    current = starterView();
+    await tick();
+    expect(live().textContent).toBe("Titulaire · Équipe 2, slot 4 · Soin");
+    // Même place, autre nom de salle et autres coéquipiers : rien à annoncer.
+    current = starterView({ placement: seat({ roomName: "Ludra-ZZZZ" }), teammates: [] });
+    await tick();
+    expect(q('[data-testid="placement"]')!.textContent).toContain("Ludra-ZZZZ");
+    expect(live().textContent).toBe("Titulaire · Équipe 2, slot 4 · Soin");
+    // Même ligne dans un autre groupe : annoncée quand même, le texte alterne d'une espace insécable.
+    current = starterView({ placement: seat({ groupNumber: 2, slotId: "slot_b" }) });
+    await tick();
+    expect(live().textContent).toBe("Titulaire · Équipe 2, slot 4 · Soin\u00a0");
+    current = viewWith({ status: "accepted", backInPreparation: true });
+    await tick();
+    expect(live().textContent).toBe("Le raid est revenu en préparation.");
+  });
+
+  it("announces a status change and a placement change of the same refresh together", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let current: ParticipantView = viewWith({ status: "pending" }, { status: "locked" });
+    serve(() => json(current));
+    await render();
+    expect(live().textContent).toBe("");
+    current = starterView();
+    await tick();
+    expect(live().textContent).toBe("Statut : Acceptée Titulaire · Équipe 2, slot 4 · Soin");
   });
 });
 

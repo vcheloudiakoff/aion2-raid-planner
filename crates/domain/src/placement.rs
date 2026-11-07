@@ -1,5 +1,6 @@
-//! Placement des groupes (AD-4 *Placement*, SPEC de l'epic 3 CAP-3) : règles pures de
-//! `apply_placement` et avertissements de la vue organisateur.
+//! Placement des groupes (AD-4 *Placement*, SPEC de l'epic 3 CAP-3 et CAP-6) : règles pures de
+//! `apply_placement`, avertissements de la vue organisateur, place et coéquipiers visibles de la
+//! vue participant ([`participant_placement`], [`teammates`]).
 //!
 //! [`validate`] ne refuse que les violations structurelles : candidature non plaçable ou en double,
 //! groupe inconnu ou en sommeil, place hors de la disposition figée du groupe, place déjà prise.
@@ -272,6 +273,106 @@ pub fn warnings(
         }
     }
     out
+}
+
+/// Un groupe de l'événement vu par [`participant_placement`], dans l'ordre des groupes (début de
+/// créneau, puis occurrence).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GroupRef<'a> {
+    pub id: &'a str,
+    pub retained: bool,
+}
+
+/// Une ligne de placement de l'événement, avec le statut de sa candidature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Assigned<'a> {
+    pub candidature_id: &'a str,
+    pub status: CandidatureStatus,
+    pub group_id: &'a str,
+    pub seat: Seat,
+}
+
+/// Place d'une candidature dans le verrouillage courant, vue par son participant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParticipantPlacement<'a> {
+    /// Rang du groupe parmi les groupes retenus, à partir de 1 (« G1 »).
+    pub group_number: u32,
+    pub group_id: &'a str,
+    pub seat: Seat,
+}
+
+/// Placement de la candidature `me` (SPEC epic 3 CAP-6) : seulement si l'événement est `locked`,
+/// que la candidature est `accepted` et qu'elle a une place dans un groupe retenu. Une place dans un
+/// groupe en sommeil vaut « non placé ». `groups` dans l'ordre des groupes : le numéro « G1… » se
+/// compte sur les seuls retenus, comme côté organisateur.
+pub fn participant_placement<'a>(
+    me: &str,
+    status: CandidatureStatus,
+    event_locked: bool,
+    groups: &[GroupRef<'a>],
+    assignments: &[Assigned<'a>],
+) -> Option<ParticipantPlacement<'a>> {
+    if !event_locked || status != CandidatureStatus::Accepted {
+        return None;
+    }
+    let mine = assignments.iter().find(|a| a.candidature_id == me)?;
+    let number = groups
+        .iter()
+        .filter(|g| g.retained)
+        .position(|g| g.id == mine.group_id)?;
+    Some(ParticipantPlacement {
+        group_number: u32::try_from(number).ok()? + 1,
+        group_id: mine.group_id,
+        seat: mine.seat,
+    })
+}
+
+/// Les coéquipiers visibles d'une équipe : ses titulaires, triés par slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartyMates<'a> {
+    pub party: u32,
+    pub members: Vec<&'a str>,
+}
+
+/// Coéquipiers visibles depuis `placement`, la place de `me`, dans un groupe à `parties` équipes :
+/// pour un titulaire, une entrée, son équipe, avec ses autres titulaires ; pour un joueur au banc,
+/// une entrée par équipe du groupe, dans l'ordre, avec ses titulaires. Membres triés par slot,
+/// éventuellement aucun. Jamais `me`, jamais un joueur au banc, jamais un autre groupe, jamais une
+/// candidature non `accepted`.
+pub fn teammates<'a>(
+    me: &str,
+    placement: &ParticipantPlacement<'_>,
+    parties: u32,
+    assignments: &[Assigned<'a>],
+) -> Vec<PartyMates<'a>> {
+    let shown: Vec<u32> = match placement.seat {
+        Seat::Starter { party, .. } => vec![party],
+        Seat::Bench { .. } => (1..=parties).collect(),
+    };
+    let mut seated: Vec<(u32, u32, &'a str)> = assignments
+        .iter()
+        .filter(|a| {
+            a.group_id == placement.group_id
+                && a.candidature_id != me
+                && a.status == CandidatureStatus::Accepted
+        })
+        .filter_map(|a| match a.seat {
+            Seat::Starter { party, index } => Some((party, index, a.candidature_id)),
+            Seat::Bench { .. } => None,
+        })
+        .collect();
+    seated.sort_unstable();
+    shown
+        .into_iter()
+        .map(|party| PartyMates {
+            party,
+            members: seated
+                .iter()
+                .filter(|&&(p, _, _)| p == party)
+                .map(|&(_, _, id)| id)
+                .collect(),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -628,5 +729,129 @@ mod tests {
         assert!(w.starters[0].unavailable);
         // Sans candidature, pas de classe : le Clerc manque toujours.
         assert_eq!(w.class_warnings.keys().collect::<Vec<_>>(), ["cleric"]);
+    }
+
+    fn at<'a>(c: &'a str, g: &'a str, seat: Seat) -> Assigned<'a> {
+        Assigned {
+            candidature_id: c,
+            status: Accepted,
+            group_id: g,
+            seat,
+        }
+    }
+
+    const fn st(party: u32, index: u32) -> Seat {
+        Seat::Starter { party, index }
+    }
+
+    const fn bn(bench_index: u32) -> Seat {
+        Seat::Bench { bench_index }
+    }
+
+    /// G1 = `g1`, `zz` en sommeil entre les deux, G2 = `g2`.
+    const GROUPS: &[GroupRef<'static>] = &[
+        GroupRef {
+            id: "g1",
+            retained: true,
+        },
+        GroupRef {
+            id: "zz",
+            retained: false,
+        },
+        GroupRef {
+            id: "g2",
+            retained: true,
+        },
+    ];
+
+    fn roster() -> Vec<Assigned<'static>> {
+        let mut pending = at("p", "g1", st(2, 5));
+        pending.status = Pending;
+        vec![
+            at("a1", "g1", st(1, 2)),
+            at("a2", "g1", st(1, 1)),
+            at("b4", "g1", st(2, 4)),
+            at("b1", "g1", st(2, 1)),
+            at("b2", "g1", st(2, 2)),
+            at("bench1", "g1", bn(1)),
+            at("bench2", "g1", bn(2)),
+            pending,
+            at("other", "g2", st(2, 3)),
+            at("other_bench", "g2", bn(1)),
+            at("asleep", "zz", st(2, 1)),
+        ]
+    }
+
+    fn place(me: &str) -> Option<ParticipantPlacement<'static>> {
+        participant_placement(me, Accepted, true, GROUPS, &roster())
+    }
+
+    #[test]
+    fn the_placement_numbers_the_group_among_retained_groups_only() {
+        assert_eq!(
+            place("b4"),
+            Some(ParticipantPlacement {
+                group_number: 1,
+                group_id: "g1",
+                seat: st(2, 4),
+            })
+        );
+        // `zz` en sommeil ne compte pas : `g2` est G2.
+        assert_eq!(
+            place("other_bench"),
+            Some(ParticipantPlacement {
+                group_number: 2,
+                group_id: "g2",
+                seat: bn(1),
+            })
+        );
+    }
+
+    #[test]
+    fn no_placement_unless_locked_accepted_and_seated_in_a_retained_group() {
+        // Sans ligne, ou dans un groupe en sommeil : non placé.
+        assert_eq!(place("nobody"), None);
+        assert_eq!(place("asleep"), None);
+        // Événement non verrouillé.
+        assert_eq!(
+            participant_placement("b4", Accepted, false, GROUPS, &roster()),
+            None
+        );
+        // Candidature non acceptée, même avec une ligne.
+        for status in [Pending, Rejected, Withdrawn] {
+            assert_eq!(
+                participant_placement("b4", status, true, GROUPS, &roster()),
+                None,
+                "{status:?}"
+            );
+        }
+    }
+
+    fn mates(me: &str) -> Vec<(u32, Vec<&'static str>)> {
+        let roster = roster();
+        let placement = place(me).unwrap();
+        teammates(me, &placement, 2, &roster)
+            .into_iter()
+            .map(|t| (t.party, t.members))
+            .collect()
+    }
+
+    #[test]
+    fn a_starter_sees_the_other_starters_of_their_party_by_slot() {
+        // Ni lui-même, ni l'autre équipe, ni le banc, ni le `pending`, ni l'autre groupe.
+        assert_eq!(mates("b4"), [(2, vec!["b1", "b2"])]);
+        assert_eq!(mates("a1"), [(1, vec!["a2"])]);
+        // Seul de son équipe dans G2 : son équipe, vide.
+        assert_eq!(mates("other"), [(2, vec![])]);
+    }
+
+    #[test]
+    fn a_benched_player_sees_the_starters_of_every_party_in_order() {
+        assert_eq!(
+            mates("bench1"),
+            [(1, vec!["a2", "a1"]), (2, vec!["b1", "b2", "b4"])]
+        );
+        // Équipe 1 de G2 vide : présente quand même.
+        assert_eq!(mates("other_bench"), [(1, vec![]), (2, vec!["other"])]);
     }
 }

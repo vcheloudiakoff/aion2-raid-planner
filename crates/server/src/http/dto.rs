@@ -403,9 +403,14 @@ pub struct ParticipantLinks {
     pub participant: String,
 }
 
-/// Réponse de `GET /api/participant` et des commandes du participant : sa seule candidature et
-/// l'événement public. Jamais une autre candidature ni un autre nom (AD-4 *Données exposées*).
-/// `discordUrl` n'existe que si la candidature est `accepted` et que l'événement a un lien.
+/// Réponse de `GET /api/participant` et des commandes du participant : sa candidature et
+/// l'événement public (AD-4 *Données exposées*). `discordUrl` n'existe que si la candidature est
+/// `accepted` et que l'événement a un lien. `placement` et `teammates` n'existent que si l'événement
+/// est `locked`, la candidature `accepted` et placée dans un groupe retenu (AD-5 : clé absente
+/// plutôt que vide) ; d'une autre candidature, seuls `pseudoSrv` et `class` des coéquipiers
+/// visibles sortent, jamais le banc pour un titulaire ni un autre groupe. `backInPreparation`
+/// n'existe que pour une candidature `accepted` d'un événement `open` qui a au moins un groupe :
+/// il a été verrouillé puis déverrouillé.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParticipantView {
@@ -421,6 +426,58 @@ pub struct ParticipantView {
     pub event: PublicEvent,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discord_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub placement: Option<ParticipantPlacement>,
+    /// Pour un titulaire, une entrée : son équipe et ses autres titulaires ; pour un joueur au banc,
+    /// une entrée par équipe de son groupe, dans l'ordre, avec ses titulaires. Membres triés par
+    /// slot, éventuellement aucun.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub teammates: Option<Vec<TeammateParty>>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub back_in_preparation: bool,
+}
+
+/// Place du participant dans le verrouillage courant. `groupNumber` : rang du groupe parmi les
+/// groupes retenus, dans l'ordre créneau puis occurrence (« G1 » côté organisateur).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticipantPlacement {
+    pub group_number: u32,
+    pub slot_id: String,
+    pub starts_at: Timestamp,
+    pub room_name: String,
+    pub seat: ParticipantSeat,
+}
+
+/// `{kind: "starter", party, index}` ou `{kind: "bench", benchIndex}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ParticipantSeat {
+    Starter {
+        party: u32,
+        index: u32,
+    },
+    Bench {
+        #[serde(rename = "benchIndex")]
+        bench_index: u32,
+    },
+}
+
+/// Une équipe vue par le participant : son numéro et ses coéquipiers visibles.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeammateParty {
+    pub party: u32,
+    pub members: Vec<Teammate>,
+}
+
+/// Un coéquipier visible : `Pseudo[SRV]` composé par le serveur (AD-6) et sa classe, rien d'autre
+/// (AD-4 *Données exposées*).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Teammate {
+    pub pseudo_srv: String,
+    pub class: String,
 }
 
 /// Un créneau coché par une candidature, et sa préférence. Partagé par les vues participant et

@@ -1,10 +1,13 @@
 // Ma candidature `/p/<secret>` (CAP-4, EXPERIENCE.md *Liens et appareils*, *State Patterns*) : en
 // tête « Ton lien personnel » avec sa puce, le partage et l'avertissement, puis le statut, le lien
 // Discord des acceptés, le résumé public, la candidature en lecture et les actions « Modifier » et
-// « Me retirer ». Relecture silencieuse toutes les 10 s, jamais pendant une modification, arrêtée
-// sur un lien mort (à la lecture ou sous une commande, qui oublie son secret sur cet appareil), un
-// raid annulé ou une candidature retirée. Le secret part en en-tête seulement et n'apparaît que dans la puce, jamais dans
-// `document.title`.
+// « Me retirer ». En `locked`, entre le statut et le lien Discord, la place du joueur, sa salle et
+// ses coéquipiers (`MyPlacement`) ; en `open` après un déverrouillage, « Le raid est revenu en
+// préparation. ». La région live annonce les changements de statut et de ligne de placement.
+// Relecture silencieuse toutes les 10 s, jamais pendant une modification, arrêtée sur un lien mort
+// (à la lecture ou sous une commande, qui oublie son secret sur cet appareil), un raid annulé ou une
+// candidature retirée. Le secret part en en-tête seulement et n'apparaît que dans la puce, jamais
+// dans `document.title`.
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
@@ -25,8 +28,9 @@ import { STATUS_STYLE } from "../components/CandidatureRow";
 import { CopyChip } from "../components/CopyChip";
 import { DeadLink, GONE, isDeadLinkCode } from "../components/DeadLink";
 import { FactionDot, Summary } from "../components/EventSummary";
+import { MyPlacement, placementKey, placementLine } from "../components/MyPlacement";
 import { roleLabel } from "../lib/labels";
-import { t, useLang, type MessageKey } from "../i18n";
+import { getLang, t, useLang, type MessageKey } from "../i18n";
 import { formatDay, formatSlot } from "../lib/time";
 import { REFRESH_MS } from "./EventPage";
 import { errorText } from "../lib/form";
@@ -102,6 +106,10 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
   const issued = useRef(0);
   const applied = useRef(0);
   const lastStatus = useRef<CandidatureStatus | null>(null);
+  /** Clé de la dernière ligne de placement vue ; `undefined` avant la première vue. */
+  const lastPlacement = useRef<string | null | undefined>(undefined);
+  const referenceRef = useRef(reference);
+  referenceRef.current = reference;
   const restoreFocus = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
@@ -115,18 +123,32 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
     heading.current?.focus();
   }, []);
 
-  /** Nouvelle vue : statut annoncé s'il change, lien gardé à la première lecture, relecture arrêtée
-   * sur un état qui ne bougera plus. `n` = numéro de la requête qui l'a rendue. */
+  /** Nouvelle vue : statut et ligne de placement annoncés s'ils changent, lien gardé à la première
+   * lecture, relecture arrêtée sur un état qui ne bougera plus. `n` = numéro de la requête qui l'a
+   * rendue. */
   const apply = useCallback(
     (n: number, v: ParticipantView) => {
       if (n <= applied.current) return;
       applied.current = n;
       setView(v);
       setLoadError(null);
+      const said: string[] = [];
       if (lastStatus.current !== null && lastStatus.current !== v.status) {
-        setAnnounce(t("participant.status", { status: t(STATUS_KEY[v.status]) }));
+        said.push(t("participant.status", { status: t(STATUS_KEY[v.status]) }));
       }
       lastStatus.current = v.status;
+      const key = placementKey(v);
+      // Sans la référence, la ligne n'aurait pas son rôle : rien n'est annoncé.
+      const reference = referenceRef.current;
+      if (reference && lastPlacement.current !== undefined && key !== lastPlacement.current && key !== null) {
+        said.push(placementLine(v, reference, getLang()) ?? "");
+      }
+      lastPlacement.current = key;
+      if (said.length > 0) {
+        const text = said.join(" ");
+        // Un texte identique ne serait pas relu : une espace insécable finale alterne.
+        setAnnounce((prev) => (prev === text ? `${text}\u00a0` : text));
+      }
       if (v.status === "withdrawn" || v.event.status === "cancelled") stopRef.current();
       if (!savedRef.current) {
         // Ce navigateur retient le lien, même ouvert depuis un autre appareil.
@@ -147,6 +169,7 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
     // (modification, confirmation) ne doit pas agir sur le nouveau.
     applied.current = issued.current;
     lastStatus.current = null;
+    lastPlacement.current = undefined;
     editingRef.current = false;
     setEditing(false);
     setConfirming(false);
@@ -327,7 +350,9 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
           </span>
         </p>
       )}
-      {/* Seuls les changements de statut sont annoncés (EXPERIENCE.md *Rafraîchissement*). */}
+      {view && <MyPlacement view={view} reference={reference} now={deps.now} />}
+      {/* Seuls les changements de statut et de ligne de placement sont annoncés (EXPERIENCE.md
+          *Rafraîchissement*, SPEC epic 3 CAP-6). */}
       <p aria-live="polite" className="sr-only">
         {announce}
       </p>
