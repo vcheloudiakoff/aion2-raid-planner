@@ -142,8 +142,9 @@ Sens unique : une couche ne dépend que de celles à sa droite. `domain` ne dép
     création `parties`, `party_size` et `room_label` de l'instance (aucune lecture ultérieure de la
     référence pour sa disposition) et reçoit son nom de salle (AD-18). Déverrouiller ne supprime rien :
     `groups`, `assignments` et noms restent, invisibles aux participants tant que `open` ; re-verrouiller
-    réapparie et ne nomme que les groupes nouveaux. Supprimer un créneau en `open` est la seule façon de
-    perdre un groupe.
+    réapparie et ne nomme que les groupes nouveaux ; un groupe non réapparié reste en sommeil (`retained`
+    à 0 : nom et placements gardés, masqué, réactivé s'il est repris ; décision de Vincent, 2026-11-07).
+    Supprimer un créneau en `open` est la seule façon de perdre un groupe.
   - *Placement* : la table `assignments` n'a de ligne que pour une candidature placée ;
     `apply_placement` en est l'unique writer et reçoit le placement complet de l'événement (liste
     `(candidatureId, groupId, party, index | benchIndex)`) qu'il remplace en entier, placement manuel ou

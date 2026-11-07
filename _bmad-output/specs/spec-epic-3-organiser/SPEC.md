@@ -70,7 +70,8 @@ de succès du produit.
 ## Assumptions
 
 - « Tri » se lit ici comme le tri et les filtres de la grille ; accepter et refuser sont livrés en epic 2.
-- `ROOM_NAME_TEMPLATE` par défaut : `{label}-{code}`, suivi de ` {cp}+` si `min_cp` est défini (nouvelle variable de cet epic, voir `placement-et-salle.md`).
+- `ROOM_NAME_TEMPLATE` par défaut : `{label}-{code}`, sans le CP (décision de Vincent, 2026-11-07 ; nouvelle variable de cet epic, voir `placement-et-salle.md`).
+- Au re-verrouillage, un groupe non réapparié reste en sommeil (nom et placements gardés, masqué, réactivé s'il est repris).
 - Le brouillon de composition vit dans la mémoire de l'onglet ; un rechargement le perd.
 - `ParticipantView` montre le placement du participant, le nom de salle et ses coéquipiers (`Pseudo[SRV]` et classe : son Équipe pour un titulaire, les titulaires de son groupe pour un joueur au banc) ; jamais le banc aux titulaires, jamais la salle d'un autre groupe.
 

@@ -33,7 +33,7 @@ Nouvelle variable de configuration de cet epic, qui complète `configuration.md`
 
 | Variable | Obligatoire | Défaut | Règle |
 | --- | --- | --- | --- |
-| `ROOM_NAME_TEMPLATE` | non | `[ASSUMPTION]` `{label}-{code}` puis ` {cp}+` si `min_cp` | jetons `{label}` (`room_label` figé), `{code}` (4 caractères Crockford, aléatoire injecté), `{cp}` ; résultat borné par `room_label_charset` et `room_label_max` + 10 `[ASSUMPTION]` ; validé au démarrage |
+| `ROOM_NAME_TEMPLATE` | non | `{label}-{code}` (sans CP, décision de Vincent du 2026-11-07) | jetons `{label}` (`room_label` figé) et `{code}` (4 caractères Crockford, aléatoire injecté) ; littéraux ASCII imprimables ; `{code}` exactement une fois ; longueur fixe du gabarit vérifiée au démarrage contre `room_label_max` + 5 `[ASSUMPTION]` |
 
 Unicité par index unique sur `room_name` des groupes non purgés ; collision → nouveau `{code}`, cinq essais
 puis 500. `regenerate_room_name(groupId)` : seule autre écriture du nom.
