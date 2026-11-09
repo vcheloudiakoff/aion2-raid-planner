@@ -9,6 +9,7 @@ import { useState } from "react";
 import { labelOf } from "../api/reference";
 import type { ParticipantView, ReferenceSet, RosterEntry } from "../api/types";
 import { t, useLang } from "../i18n";
+import { teamsText } from "./CandidatureRow";
 
 /** En dessous de ce nombre d'acceptés, la section s'ouvre d'elle-même. */
 export const OPEN_BELOW = 15;
@@ -53,6 +54,11 @@ function Roster({ entries, self, reference }: RosterProps) {
           <li key={i} data-me={i === self ? "" : undefined} className="flex flex-wrap items-baseline gap-x-2">
             <span className="font-mono break-all">{m.pseudoSrv}</span>
             <span className="text-meta text-ink-secondary">{classLabel(m.class)}</span>
+            {m.teams.length > 0 && (
+              <span data-testid="roster-teams" className="text-meta text-ink-secondary">
+                {teamsText(m)}
+              </span>
+            )}
             {i === self && <span className="text-meta text-accent">{t("participant.accepted.me")}</span>}
           </li>
         ))}

@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ApiError } from "../api/client";
 import { forgetSecret, saveParticipantLink } from "../api/links";
-import { getParticipant, updateCandidature, withdrawCandidature } from "../api/participant";
+import { getParticipant, setTeams, updateCandidature, withdrawCandidature } from "../api/participant";
 import { labelOf } from "../api/reference";
 import type {
   CandidatureStatus,
@@ -24,6 +24,7 @@ import type {
   SubmitCandidature,
 } from "../api/types";
 import { AcceptedList } from "../components/AcceptedList";
+import { TeamPicker, type TeamValue } from "../components/TeamPicker";
 import { CandidatureForm } from "../components/CandidatureForm";
 import { ConfirmSheet } from "../components/ConfirmSheet";
 import { STATUS_STYLE } from "../components/CandidatureRow";
@@ -97,6 +98,8 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
   const [confirming, setConfirming] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [teamsBusy, setTeamsBusy] = useState(false);
+  const [teamsError, setTeamsError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [announce, setAnnounce] = useState("");
   const editingRef = useRef(false);
@@ -275,6 +278,20 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
     edit(false);
   }
 
+  async function saveTeams(v: TeamValue) {
+    const n = ++issued.current;
+    setTeamsBusy(true);
+    setTeamsError(null);
+    try {
+      apply(n, await setTeams(secret, v));
+    } catch (err) {
+      if (deadUnder(err)) return;
+      setTeamsError(errorText(err instanceof ApiError ? err.code : undefined));
+    } finally {
+      setTeamsBusy(false);
+    }
+  }
+
   async function withdraw() {
     const n = ++issued.current;
     setWithdrawing(true);
@@ -427,6 +444,27 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
           ) : (
             <>
               <Candidature view={view} reference={reference} now={deps.now} headingRef={candidatureHeading} />
+              {(() => {
+                const parties = reference?.instances.find((i) => i.id === view.event.instance)?.parties ?? 1;
+                if (parties < 2 || view.status === "withdrawn" || view.event.status === "cancelled") return null;
+                return (
+                  <section data-testid="my-teams" className="mt-4">
+                    <h3 className="text-label">{t("event.teams")}</h3>
+                    <p className="text-meta text-ink-secondary">{t("event.teams.hint")}</p>
+                    <TeamPicker
+                      parties={parties}
+                      value={{ teams: view.teams, preferredTeam: view.preferredTeam }}
+                      onChange={saveTeams}
+                      disabled={teamsBusy}
+                    />
+                    {teamsError && (
+                      <p role="alert" className="mt-1 text-meta text-danger">
+                        {teamsError}
+                      </p>
+                    )}
+                  </section>
+                );
+              })()}
               <Actions
                 view={view}
                 editButton={editButton}

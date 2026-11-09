@@ -10,6 +10,7 @@ pub mod regenerate_room_name;
 pub mod remove_slot;
 mod room_name;
 pub mod set_candidature_status;
+pub mod set_teams;
 pub mod submit_candidature;
 pub mod unlock_event;
 pub mod update_candidature;

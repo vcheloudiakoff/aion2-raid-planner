@@ -226,7 +226,11 @@ export interface Teammate {
 
 /** Une ligne de la liste des acceptés : même forme qu'un coéquipier, `Pseudo[SRV]` et classe, rien
  * d'autre. */
-export type RosterEntry = Teammate;
+export interface RosterEntry extends Teammate {
+  /** Équipes souhaitées, vide = peu importe. */
+  teams: number[];
+  preferredTeam?: number;
+}
 
 /** Lien par lequel une candidature est arrivée : `/j/` direct, `/e/` public. */
 export type Origin = "direct" | "public";

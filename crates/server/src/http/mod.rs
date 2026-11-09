@@ -85,6 +85,7 @@ pub fn router_with<A: RustEmbed + Send + Sync + 'static>(state: AppState) -> Rou
             "/participant/withdrawal",
             post(participant::post_withdrawal),
         )
+        .route("/participant/teams", post(participant::post_teams))
         .route(
             "/organizer/candidature-status",
             post(organizer::post_candidature_status),

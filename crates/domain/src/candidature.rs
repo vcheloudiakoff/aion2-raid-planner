@@ -261,6 +261,31 @@ fn kept_availabilities(
         .collect()
 }
 
+/// Choix d'Équipe pour une instance à `parties` Équipes : numéros dans `1..=parties`, sans
+/// doublon ; l'étoile seulement sur une Équipe cochée parmi au moins deux. Rend le choix trié.
+pub fn validate_teams(parties: u32, input: &TeamChoice) -> Result<TeamChoice, CandidatureErrors> {
+    let mut errors: CandidatureErrors = Vec::new();
+    let mut teams = input.teams.clone();
+    teams.sort_unstable();
+    teams.dedup();
+    if teams.len() != input.teams.len() || teams.iter().any(|t| *t == 0 || *t > parties) {
+        errors.push(("teams".into(), CandidatureError::TeamInvalid));
+    }
+    if let Some(p) = input.preferred
+        && (teams.len() < 2 || !teams.contains(&p))
+    {
+        errors.push(("preferredTeam".into(), CandidatureError::TeamInvalid));
+    }
+    if errors.is_empty() {
+        Ok(TeamChoice {
+            teams,
+            preferred: input.preferred,
+        })
+    } else {
+        Err(errors)
+    }
+}
+
 /// Règles communes à la création (`current` absent) et à la modification.
 fn validate(
     reference: &ReferenceSet,
@@ -332,18 +357,13 @@ fn validate(
         }
     }
 
-    let mut teams = input.teams.teams.clone();
-    teams.sort_unstable();
-    teams.dedup();
-    if teams.len() != input.teams.teams.len() || teams.iter().any(|t| *t == 0 || *t > event.parties)
-    {
-        fail("teams".into(), CandidatureError::TeamInvalid);
-    }
-    if let Some(p) = input.teams.preferred
-        && (teams.len() < 2 || !teams.contains(&p))
-    {
-        fail("preferredTeam".into(), CandidatureError::TeamInvalid);
-    }
+    let teams = match validate_teams(event.parties, &input.teams) {
+        Ok(t) => t,
+        Err(e) => {
+            errors.extend(e);
+            TeamChoice::default()
+        }
+    };
 
     match cp {
         Some(cp) if errors.is_empty() => Ok((
@@ -353,10 +373,7 @@ fn validate(
                 class: input.class,
                 cp,
                 availabilities: input.availabilities,
-                teams: TeamChoice {
-                    teams,
-                    preferred: input.teams.preferred,
-                },
+                teams,
             },
             kept,
         )),
@@ -369,6 +386,8 @@ fn validate(
 pub enum ParticipantAction {
     Update,
     Withdraw,
+    /// Changer ses Équipes souhaitées : permis aussi en `locked`.
+    Teams,
 }
 
 /// Refus d'un geste du participant, dans l'ordre où les règles sont vérifiées.
@@ -403,7 +422,7 @@ pub fn participant_may(
         ParticipantAction::Update if event == EventStatus::Locked => {
             Err(ParticipantRefusal::EventLocked)
         }
-        ParticipantAction::Update => Ok(()),
+        ParticipantAction::Update | ParticipantAction::Teams => Ok(()),
         ParticipantAction::Withdraw => match status {
             CandidatureStatus::Pending | CandidatureStatus::Accepted => Ok(()),
             _ => Err(ParticipantRefusal::TransitionForbidden),

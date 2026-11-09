@@ -8,6 +8,7 @@ import type { ParticipantView, SubmitCandidature } from "./types";
 export const PARTICIPANT_URL = "/api/participant";
 export const UPDATE_URL = `${PARTICIPANT_URL}/candidature`;
 export const WITHDRAW_URL = `${PARTICIPANT_URL}/withdrawal`;
+export const TEAMS_URL = `${PARTICIPANT_URL}/teams`;
 
 export function getParticipant(secret: string): Promise<ParticipantView> {
   return getJson<ParticipantView>(PARTICIPANT_URL, { linkSecret: secret });
@@ -21,4 +22,12 @@ export function updateCandidature(secret: string, input: SubmitCandidature): Pro
 /** `pending` ou `accepted` → `withdrawn`, terminal. */
 export function withdrawCandidature(secret: string): Promise<ParticipantView> {
   return postJson<ParticipantView>(WITHDRAW_URL, {}, { linkSecret: secret });
+}
+
+/** Équipes souhaitées, en `open` comme en `locked` ; rien d'autre ne change. */
+export function setTeams(
+  secret: string,
+  input: { teams: number[]; preferredTeam?: number },
+): Promise<ParticipantView> {
+  return postJson<ParticipantView>(TEAMS_URL, input, { linkSecret: secret });
 }

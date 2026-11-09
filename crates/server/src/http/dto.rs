@@ -502,9 +502,27 @@ pub struct Teammate {
     pub class: String,
 }
 
-/// Une ligne de la liste des acceptés : même forme qu'un coéquipier, `Pseudo[SRV]` et classe, rien
-/// d'autre (AD-4 *Données exposées*).
-pub type RosterEntry = Teammate;
+/// Une ligne de la liste des acceptés : `Pseudo[SRV]`, classe et Équipes souhaitées, rien d'autre
+/// (AD-4 *Données exposées*, élargi le 2026-11-09 aux Équipes).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RosterEntry {
+    pub pseudo_srv: String,
+    pub class: String,
+    pub teams: Vec<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_team: Option<u32>,
+}
+
+/// Corps de `POST /api/participant/teams` : Équipes souhaitées, vide = peu importe.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetTeams {
+    #[serde(default)]
+    pub teams: Vec<u32>,
+    #[serde(default)]
+    pub preferred_team: Option<u32>,
+}
 
 /// Un créneau coché par une candidature, et sa préférence. Partagé par les vues participant et
 /// organisateur.

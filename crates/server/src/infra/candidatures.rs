@@ -265,6 +265,25 @@ pub async fn update_content(
     Ok(())
 }
 
+/// Pose les Équipes souhaitées et `updated_at`.
+pub async fn set_teams(
+    conn: &mut SqliteConnection,
+    id: &str,
+    teams: &TeamChoice,
+    now: Timestamp,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE candidatures SET teams = ?, preferred_team = ?, updated_at = ? WHERE id = ?",
+    )
+    .bind(teams.mask())
+    .bind(teams.preferred.map(i64::from))
+    .bind(now)
+    .bind(id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
 /// Pose le statut de la candidature et `updated_at`.
 pub async fn set_status(
     conn: &mut SqliteConnection,

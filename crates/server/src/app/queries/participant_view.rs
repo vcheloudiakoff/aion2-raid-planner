@@ -148,6 +148,8 @@ fn roster(
             RosterEntry {
                 pseudo_srv: pseudo_srv(reference, &c.pseudo, &c.server),
                 class: c.class.clone(),
+                teams: c.teams.teams.clone(),
+                preferred_team: c.teams.preferred,
             }
         })
         .collect();

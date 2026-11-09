@@ -528,13 +528,18 @@ fn has_key(v: &Value, key: &str) -> bool {
     }
 }
 
-/// `acceptedRoster` de `v`, chaque ligne vérifiée réduite à `pseudoSrv` et `class`.
-fn roster_of(v: &Value) -> &Vec<Value> {
+/// `acceptedRoster` de `v`, chaque ligne vérifiée réduite à `pseudoSrv`, `class` et `teams` (vide
+/// ici), rendue sans `teams` pour comparer aux attendus.
+fn roster_of(v: &Value) -> Vec<Value> {
     let list = v["acceptedRoster"].as_array().unwrap();
-    for item in list {
-        assert_eq!(keys_of(item), ["class", "pseudoSrv"], "{item}");
-    }
-    list
+    list.iter()
+        .map(|item| {
+            assert_eq!(keys_of(item), ["class", "pseudoSrv", "teams"], "{item}");
+            let mut item = item.clone();
+            item.as_object_mut().unwrap().remove("teams");
+            item
+        })
+        .collect()
 }
 
 fn assert_no_roster(v: &Value, ctx: &str) {
@@ -672,7 +677,11 @@ async fn locking_keeps_the_same_list_next_to_the_seat_and_teammates() {
     assert!(v.get("placement").is_some(), "{v}");
     assert!(v.get("teammates").is_some(), "{v}");
     assert_eq!(roster_of(&v), roster_of(&before), "{body}");
-    assert_eq!(v["acceptedRoster"], expected_roster(&o, &r), "{body}");
+    assert_eq!(
+        Value::Array(roster_of(&v)),
+        expected_roster(&o, &r),
+        "{body}"
+    );
     assert_eq!(v["acceptedRosterSelf"], 1, "{body}");
     assert!(
         roster_of(&v)
@@ -701,7 +710,11 @@ async fn an_edit_carries_the_list_and_a_withdrawal_drops_it() {
     assert_eq!(res.status(), StatusCode::OK, "{text}");
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["cp"], 2000);
-    assert_eq!(v["acceptedRoster"], expected_roster(&o, &r), "{text}");
+    assert_eq!(
+        Value::Array(roster_of(&v)),
+        expected_roster(&o, &r),
+        "{text}"
+    );
     assert_eq!(v["acceptedRosterSelf"], 0, "{text}");
     let (res, text) =
         post_json_with(&router, "/api/participant/withdrawal", &json!({}), &headers).await;

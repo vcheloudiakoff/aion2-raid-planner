@@ -14,6 +14,7 @@ import { formatDay, formatSlot } from "../lib/time";
 import { errorText } from "../lib/form";
 import { roleLabel } from "../lib/labels";
 import { FactionDot } from "./EventSummary";
+import { TeamPicker } from "./TeamPicker";
 
 export const PSEUDO_MAX = 16;
 export const CP_MAX = 999_999;
@@ -163,14 +164,6 @@ export function CandidatureForm({
 
   function togglePreferred(slotId: string) {
     setChecked((all) => (slotId in all ? { ...all, [slotId]: !all[slotId] } : all));
-  }
-
-  function toggleTeam(n: number) {
-    clearField("teams");
-    clearField("preferredTeam");
-    const next = teams.includes(n) ? teams.filter((x) => x !== n) : [...teams, n].sort((a, b) => a - b);
-    setTeams(next);
-    if (next.length < 2 || (preferredTeam !== undefined && !next.includes(preferredTeam))) setPreferredTeam(undefined);
   }
 
   async function submit(e: FormEvent) {
@@ -398,48 +391,16 @@ export function CandidatureForm({
         <fieldset>
           <legend className={label}>{t("event.teams")}</legend>
           <p className="text-meta text-ink-secondary">{t("event.teams.hint")}</p>
-          <ul className="mt-2 flex flex-col gap-2">
-            {Array.from({ length: parties }, (_, i) => i + 1).map((n) => {
-              const on = teams.includes(n);
-              const star = preferredTeam === n;
-              const name = t("event.team", { n });
-              return (
-                <li key={n} data-testid={`team-${n}`} className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => toggleTeam(n)}
-                    className={`flex min-h-tap min-w-0 flex-1 items-center gap-3 rounded-md border px-3 text-left text-label ${
-                      on ? "border-2 border-available text-ink-primary" : "border-border text-ink-secondary"
-                    }`}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={`flex size-6 shrink-0 items-center justify-center rounded-sm ${
-                        on ? "bg-available text-on-accent" : "bg-surface-sunken"
-                      }`}
-                    >
-                      {on ? "✓" : "–"}
-                    </span>
-                    <span>{name}</span>
-                  </button>
-                  {on && teams.length > 1 && (
-                    <button
-                      type="button"
-                      aria-pressed={star}
-                      aria-label={t("event.team.preferred", { team: name })}
-                      onClick={() => setPreferredTeam(star ? undefined : n)}
-                      className={`flex size-tap shrink-0 items-center justify-center rounded-md border text-title ${
-                        star ? "border-accent text-accent" : "border-border text-ink-secondary"
-                      }`}
-                    >
-                      {star ? "★" : "☆"}
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+          <TeamPicker
+            parties={parties}
+            value={{ teams, preferredTeam }}
+            onChange={(v) => {
+              clearField("teams");
+              clearField("preferredTeam");
+              setTeams(v.teams);
+              setPreferredTeam(v.preferredTeam);
+            }}
+          />
           {errorLine("teams")}
           {errorLine("preferredTeam")}
         </fieldset>

@@ -859,12 +859,12 @@ describe("placement", () => {
 
 describe("accepted list", () => {
   const roster = (n: number) =>
-    Array.from({ length: n }, (_, i) => ({ pseudoSrv: `Joueur${i}[SB]`, class: "c2" }));
+    Array.from({ length: n }, (_, i) => ({ pseudoSrv: `Joueur${i}[SB]`, class: "c2", teams: [] }));
   /** Trois acceptés dont le lecteur (Nyra), au milieu. */
   const acceptedRoster = [
-    { pseudoSrv: "Kael[SA]", class: "c2" },
-    { pseudoSrv: "Nyra[SA]", class: "c1" },
-    { pseudoSrv: "Lio[SB]", class: "c1" },
+    { pseudoSrv: "Kael[SA]", class: "c2", teams: [] },
+    { pseudoSrv: "Nyra[SA]", class: "c1", teams: [] },
+    { pseudoSrv: "Lio[SB]", class: "c1", teams: [] },
   ];
   const listed = (patch: Partial<ParticipantView> = {}, event: Partial<ParticipantView["event"]> = {}) =>
     viewWith({ status: "accepted", acceptedRoster, acceptedRosterSelf: 1, ...patch }, event);
@@ -884,7 +884,7 @@ describe("accepted list", () => {
   });
 
   it("two identical lines: only the one at acceptedRosterSelf is marked", async () => {
-    const twin = { pseudoSrv: "Nyra[SA]", class: "c1" };
+    const twin = { pseudoSrv: "Nyra[SA]", class: "c1", teams: [] };
     serve(() => json(listed({ acceptedRoster: [twin, twin], acceptedRosterSelf: 1 })));
     await render();
     expect(marked()).toEqual([false, true]);
@@ -1015,5 +1015,34 @@ describe("refresh", () => {
     await tick();
     expect(reads(calls)).toBe(2);
     expect(q('[data-testid="candidature"]')).not.toBeNull();
+  });
+});
+
+describe("my teams", () => {
+  it("are editable on a locked event, star only once two are ticked", async () => {
+    const locked = viewWith({ status: "accepted" }, { status: "locked" });
+    const calls = serve(
+      () => json(locked),
+      () => json({ ...locked, teams: [1] }),
+      () => json({ ...locked, teams: [1, 2] }),
+      () => json({ ...locked, teams: [1, 2], preferredTeam: 2 }),
+    );
+    await render();
+    const team = (n: number) => q<HTMLButtonElement>(`[data-testid="my-teams"] [data-testid="team-${n}"] button`)!;
+    const star = (n: number) => q<HTMLButtonElement>(`[data-testid="my-teams"] [data-testid="team-${n}"] button + button`);
+    expect(q('[data-testid="my-teams"]')).not.toBeNull();
+    expect(star(1)).toBeNull();
+    await act(async () => team(1).click());
+    await flush();
+    expect(sent(posts(calls)[0])).toEqual({ teams: [1] });
+    expect(posts(calls)[0].url).toBe("/api/participant/teams");
+    expect(star(1)).toBeNull();
+    await act(async () => team(2).click());
+    await flush();
+    expect(sent(posts(calls)[1])).toEqual({ teams: [1, 2] });
+    await act(async () => star(2)!.click());
+    await flush();
+    expect(sent(posts(calls)[2])).toEqual({ teams: [1, 2], preferredTeam: 2 });
+    expect(star(2)!.getAttribute("aria-pressed")).toBe("true");
   });
 });

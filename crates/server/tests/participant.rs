@@ -578,3 +578,31 @@ async fn an_availability_on_a_deleted_slot_is_slot_unknown_never_500() {
     );
     assert_eq!(row(&state, &c).await, before);
 }
+
+#[tokio::test]
+async fn teams_change_even_when_locked_and_show_in_the_roster() {
+    let (state, router) = setup("teams").await;
+    let e = create(&state, &router, "all").await;
+    let c = candidate(&state, &router, &e, "Nyraelle", true).await;
+    set_event_status(&state, &e, "locked").await;
+    let teams = "/api/participant/teams";
+    let body = json!({ "teams": [2, 1], "preferredTeam": 1 });
+    let (res, text) = post_json_with(&router, teams, &body, &secret(&c)).await;
+    assert_eq!(res.status(), StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["teams"], json!([1, 2]));
+    assert_eq!(v["preferredTeam"], 1);
+    assert_eq!(v["acceptedRoster"][0]["teams"], json!([1, 2]));
+    assert_eq!(v["acceptedRoster"][0]["preferredTeam"], 1);
+    // L'étoile sur une seule Équipe cochée est refusée, rien n'est écrit.
+    let bad = json!({ "teams": [1], "preferredTeam": 1 });
+    let (res, text) = post_json_with(&router, teams, &bad, &secret(&c)).await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        v["fields"]["preferredTeam"], "candidature.team_invalid",
+        "{text}"
+    );
+    let (_, v, _) = read(&router, &c).await;
+    assert_eq!(v["teams"], json!([1, 2]));
+}
