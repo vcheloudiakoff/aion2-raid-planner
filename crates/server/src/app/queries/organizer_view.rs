@@ -192,8 +192,11 @@ pub async fn load(
                 })
                 .collect(),
             duplicate,
+            teams: c.teams.teams,
+            preferred_team: c.teams.preferred,
         })
         .collect();
+    let team_roles = snapshot.team_roles.clone();
     let class_bounds = snapshot
         .bounds
         .iter()
@@ -211,6 +214,7 @@ pub async fn load(
         event: public_event::build(reference, snapshot),
         discord_url,
         class_bounds,
+        team_roles,
         slots,
         groups,
         candidatures,

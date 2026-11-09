@@ -356,6 +356,12 @@ pub struct SubmitCandidature {
     pub cp: i64,
     /// Une entrée par créneau coché ; `preferred` ne peut donc viser qu'un créneau coché.
     pub availabilities: Vec<AvailabilityInput>,
+    /// Équipes souhaitées (numéros à partir de 1) ; absent ou vide = peu importe.
+    #[serde(default)]
+    pub teams: Vec<u32>,
+    /// Équipe préférée, seulement si au moins deux Équipes sont cochées.
+    #[serde(default)]
+    pub preferred_team: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -381,6 +387,10 @@ impl From<SubmitCandidature> for cand::NewCandidature {
                     preferred: a.preferred,
                 })
                 .collect(),
+            teams: cand::TeamChoice {
+                teams: c.teams,
+                preferred: c.preferred_team,
+            },
         }
     }
 }
@@ -423,6 +433,10 @@ pub struct ParticipantView {
     pub status: CandidatureStatus,
     /// Triées par début de créneau, créneaux passés compris.
     pub availabilities: Vec<Availability>,
+    /// Équipes souhaitées, vide = peu importe.
+    pub teams: Vec<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_team: Option<u32>,
     pub event: PublicEvent,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discord_url: Option<String>,
@@ -516,6 +530,8 @@ pub struct OrganizerEvent {
     pub discord_url: Option<String>,
     /// `classId → {min, max}`, une entrée par classe bornée de l'événement.
     pub class_bounds: BTreeMap<String, ClassBound>,
+    /// Rôles demandés par Équipe, `roleId → nombre`, la première entrée pour l'Équipe 1.
+    pub team_roles: Vec<BTreeMap<String, u32>>,
     /// Une entrée par créneau, dans l'ordre de `event.slots` : disponibles parmi les `accepted`.
     pub slots: Vec<OrganizerSlot>,
     /// Groupes de l'événement, en sommeil compris (`retained` faux), triés par début de créneau
@@ -617,6 +633,10 @@ pub struct OrganizerCandidature {
     /// Triées par début de créneau, créneaux passés compris.
     pub availabilities: Vec<Availability>,
     pub duplicate: bool,
+    /// Équipes souhaitées, vide = peu importe.
+    pub teams: Vec<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_team: Option<u32>,
 }
 
 /// Corps de `POST /api/organizer/candidature-status`. `status` ne vaut que `accepted` ou `rejected` :
@@ -645,6 +665,9 @@ pub struct UpdateEventSettings {
     #[serde(default)]
     pub min_cp: Option<i64>,
     pub class_bounds: BTreeMap<String, NewBound>,
+    /// Absent : les rôles demandés par Équipe ne changent pas.
+    #[serde(default)]
+    pub team_roles: Option<Vec<BTreeMap<String, i64>>>,
 }
 
 impl From<UpdateEventSettings> for ev::NewSettings {

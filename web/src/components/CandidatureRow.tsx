@@ -45,6 +45,11 @@ export function DuplicateBadge() {
   );
 }
 
+/** Équipes souhaitées en court (« É1★ É2 ») ; rien si peu importe. */
+export function teamsText(c: Pick<OrganizerCandidature, "teams" | "preferredTeam">): string {
+  return c.teams.map((n) => `${t("organizer.teamShort", { n })}${c.preferredTeam === n ? "★" : ""}`).join(" ");
+}
+
 /** `[SRV]` lu dans `pseudoSrv`, composé par le serveur : le client ne recompose jamais `Pseudo[SRV]`
  * (AD-6). */
 export function srvOf(c: OrganizerCandidature): string {
@@ -88,6 +93,7 @@ export function CandidatureRow({ candidature: c, reference, fresh, onOpen }: Pro
               {srvOf(c)}
             </span>
             <span>{gameClass ? labelOf(gameClass.label, lang) : c.class}</span>
+            {c.teams.length > 0 && <span data-testid="teams">{teamsText(c)}</span>}
           </span>
         </span>
         <span className="flex shrink-0 flex-col items-end gap-1">

@@ -99,7 +99,7 @@ async fn write(
         class: current.class,
         availabilities: current.availabilities,
     };
-    let update = validate_update(reference, &context(&event), now, &current, input)
+    let update = validate_update(reference, &context(&event, reference), now, &current, input)
         .map_err(|e| WriteError::Refused(Problem::fields(e)))?;
     candidatures::update_content(
         &mut tx,

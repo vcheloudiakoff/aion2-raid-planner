@@ -6,8 +6,11 @@
 //! première candidature, puis règles de la création sur les seules valeurs changées), écriture,
 //! puis la vue organisateur relue avant le commit. Ni note ni lien Discord journalisé (AD-15).
 
+use std::collections::BTreeMap;
+
 use domain::event::{
     ClassBound, CurrentSettings, EventAction, NewSettings, event_may, validate_settings,
+    validate_team_roles,
 };
 use domain::reference::ReferenceSet;
 use sqlx::Connection;
@@ -28,7 +31,8 @@ pub async fn update_event_settings(
     let Some(reference) = state.reference.get() else {
         return Err(Code::ReferenceUnavailable.into());
     };
-    let view = write(state, &reference, event_id, body.into())
+    let team_roles = body.team_roles.clone();
+    let view = write(state, &reference, event_id, body.into(), team_roles)
         .await
         .map_err(|e| e.into_problem("update_event_settings", event_id))?;
     tracing::info!(event = event_id, "event settings updated");
@@ -40,6 +44,7 @@ async fn write(
     reference: &ReferenceSet,
     event_id: &str,
     input: NewSettings,
+    team_roles: Option<Vec<BTreeMap<String, i64>>>,
 ) -> Result<OrganizerEvent, E> {
     let mut conn = state.db.write.acquire().await?;
     let mut tx = conn.begin().await?;
@@ -67,7 +72,24 @@ async fn write(
     };
     let settings = validate_settings(reference, &current, input)
         .map_err(|e| E::Refused(Problem::fields(e)))?;
+    let team_roles = match team_roles {
+        None => None,
+        Some(t) => {
+            let (parties, party_size) = reference
+                .instances
+                .iter()
+                .find(|i| i.id == settings.instance)
+                .map_or((1, 0), |i| (i.parties, i.party_size));
+            Some(
+                validate_team_roles(reference, parties, party_size, t)
+                    .map_err(|e| E::Refused(Problem::fields(e)))?,
+            )
+        }
+    };
     events::update_settings(&mut tx, event_id, &settings).await?;
+    if let Some(t) = &team_roles {
+        events::update_team_roles(&mut tx, event_id, t).await?;
+    }
     let view = organizer_view::load(&mut tx, reference, event_id)
         .await?
         .ok_or_else(|| E::refused(Code::AuthNotFound))?;

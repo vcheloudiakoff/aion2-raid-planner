@@ -64,9 +64,11 @@ codes! {
     CandidaturePseudoInvalid => "candidature.pseudo_invalid", BAD_REQUEST;
     CandidatureServerOutOfRegion => "candidature.server_out_of_region", BAD_REQUEST;
     CandidatureSlotUnknown => "candidature.slot_unknown", BAD_REQUEST;
+    CandidatureTeamInvalid => "candidature.team_invalid", BAD_REQUEST;
     CandidatureTransitionForbidden => "candidature.transition_forbidden", CONFLICT;
     CandidatureWithdrawn => "candidature.withdrawn", CONFLICT;
     EventClassBoundsInvalid => "event.class_bounds_invalid", BAD_REQUEST;
+    EventTeamRolesInvalid => "event.team_roles_invalid", BAD_REQUEST;
     EventClosed => "event.closed", CONFLICT;
     EventDiscordUrlInvalid => "event.discord_url_invalid", BAD_REQUEST;
     EventFactionScopeNotAllowed => "event.faction_scope_not_allowed", BAD_REQUEST;
@@ -146,6 +148,7 @@ impl From<EventError> for Code {
             EventError::DiscordUrlInvalid => Code::EventDiscordUrlInvalid,
             EventError::MinCpOutOfRange => Code::EventMinCpOutOfRange,
             EventError::ClassBoundsInvalid => Code::EventClassBoundsInvalid,
+            EventError::TeamRolesInvalid => Code::EventTeamRolesInvalid,
             EventError::FieldImmutable => Code::EventFieldImmutable,
         }
     }
@@ -184,6 +187,7 @@ impl From<CandidatureError> for Code {
             CandidatureError::NoAvailability => Code::CandidatureNoAvailability,
             CandidatureError::SlotUnknown => Code::CandidatureSlotUnknown,
             CandidatureError::SlotInPast => Code::SlotInPast,
+            CandidatureError::TeamInvalid => Code::CandidatureTeamInvalid,
         }
     }
 }
@@ -431,6 +435,7 @@ mod tests {
             EventError::DiscordUrlInvalid,
             EventError::MinCpOutOfRange,
             EventError::ClassBoundsInvalid,
+            EventError::TeamRolesInvalid,
         ] {
             assert_eq!(Code::from(e).status(), StatusCode::BAD_REQUEST, "{e:?}");
         }
@@ -486,6 +491,7 @@ mod tests {
             CandidatureError::NoAvailability,
             CandidatureError::SlotUnknown,
             CandidatureError::SlotInPast,
+            CandidatureError::TeamInvalid,
         ] {
             assert_eq!(Code::from(e).status(), StatusCode::BAD_REQUEST, "{e:?}");
         }

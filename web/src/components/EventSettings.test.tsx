@@ -192,6 +192,7 @@ describe("settings form", () => {
       note: "Go",
       visibility: "unlisted",
       classBounds: { c1: { min: 2, max: 3 }, c2: { min: 1, max: 10 } },
+      teamRoles: [],
     });
     // Le brouillon repart de la vue rendue.
     expect(note().value).toBe("Go");

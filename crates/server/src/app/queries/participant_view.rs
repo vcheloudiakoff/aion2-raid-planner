@@ -114,6 +114,8 @@ pub async fn load(
                 preferred: a.preferred,
             })
             .collect(),
+        teams: c.teams.teams,
+        preferred_team: c.teams.preferred,
         event: public_event::build(reference, snapshot),
         discord_url,
         placement,

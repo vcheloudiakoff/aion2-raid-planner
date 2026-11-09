@@ -4,7 +4,9 @@
 use std::collections::HashMap;
 
 use domain::Timestamp;
-use domain::candidature::{CandidatureStatus, NewAvailability, Origin, ValidCandidature};
+use domain::candidature::{
+    CandidatureStatus, NewAvailability, Origin, TeamChoice, ValidCandidature,
+};
 use sqlx::SqliteConnection;
 
 /// Insère la candidature et une ligne `availabilities` par créneau coché.
@@ -19,7 +21,7 @@ pub async fn insert(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO candidatures (id, event_id, pseudo, server, class, cp, status, origin, \
-         created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         created_at, updated_at, teams, preferred_team) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(event_id)
@@ -31,6 +33,8 @@ pub async fn insert(
     .bind(origin.as_str())
     .bind(now)
     .bind(now)
+    .bind(candidature.teams.mask())
+    .bind(candidature.teams.preferred.map(i64::from))
     .execute(&mut *conn)
     .await?;
     for a in &candidature.availabilities {
@@ -59,6 +63,7 @@ pub struct CandidatureRow {
     pub status: CandidatureStatus,
     pub origin: Origin,
     pub availabilities: Vec<NewAvailability>,
+    pub teams: TeamChoice,
 }
 
 fn decode<T>(value: Option<T>, column: &'static str) -> Result<T, sqlx::Error> {
@@ -67,13 +72,23 @@ fn decode<T>(value: Option<T>, column: &'static str) -> Result<T, sqlx::Error> {
     })
 }
 
-/// Colonnes lues d'une candidature : `pseudo, server, class, cp, status, origin`.
-type Columns = (String, String, String, i64, String, String);
+/// Colonnes lues d'une candidature : `pseudo, server, class, cp, status, origin, teams,
+/// preferred_team`.
+type Columns = (
+    String,
+    String,
+    String,
+    i64,
+    String,
+    String,
+    i64,
+    Option<i64>,
+);
 
 fn row(
     id: String,
     event_id: &str,
-    (pseudo, server, class, cp, status, origin): Columns,
+    (pseudo, server, class, cp, status, origin, teams, preferred): Columns,
     availabilities: Vec<NewAvailability>,
 ) -> Result<CandidatureRow, sqlx::Error> {
     Ok(CandidatureRow {
@@ -86,6 +101,7 @@ fn row(
         status: decode(CandidatureStatus::parse(&status), "status")?,
         origin: decode(Origin::parse(&origin), "origin")?,
         availabilities,
+        teams: decode(TeamChoice::from_mask(teams, preferred), "teams")?,
     })
 }
 
@@ -104,8 +120,8 @@ pub async fn load(
     id: &str,
 ) -> Result<Option<CandidatureRow>, sqlx::Error> {
     let columns: Option<Columns> = sqlx::query_as(
-        "SELECT pseudo, server, class, cp, status, origin FROM candidatures \
-         WHERE id = ? AND event_id = ?",
+        "SELECT pseudo, server, class, cp, status, origin, teams, preferred_team \
+         FROM candidatures WHERE id = ? AND event_id = ?",
     )
     .bind(id)
     .bind(event_id)
@@ -158,9 +174,20 @@ pub async fn list(
     conn: &mut SqliteConnection,
     event_id: &str,
 ) -> Result<Vec<CandidatureRow>, sqlx::Error> {
-    let rows: Vec<(String, String, String, String, i64, String, String)> = sqlx::query_as(
-        "SELECT id, pseudo, server, class, cp, status, origin FROM candidatures \
-         WHERE event_id = ? ORDER BY created_at, rowid",
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        String,
+        i64,
+        String,
+        String,
+        i64,
+        Option<i64>,
+    )> = sqlx::query_as(
+        "SELECT id, pseudo, server, class, cp, status, origin, teams, preferred_team \
+             FROM candidatures WHERE event_id = ? ORDER BY created_at, rowid",
     )
     .bind(event_id)
     .fetch_all(&mut *conn)
@@ -181,15 +208,17 @@ pub async fn list(
             .push(availability((slot_id, preferred)));
     }
     rows.into_iter()
-        .map(|(id, pseudo, server, class, cp, status, origin)| {
-            let availabilities = by_candidature.remove(&id).unwrap_or_default();
-            row(
-                id,
-                event_id,
-                (pseudo, server, class, cp, status, origin),
-                availabilities,
-            )
-        })
+        .map(
+            |(id, pseudo, server, class, cp, status, origin, teams, preferred)| {
+                let availabilities = by_candidature.remove(&id).unwrap_or_default();
+                row(
+                    id,
+                    event_id,
+                    (pseudo, server, class, cp, status, origin, teams, preferred),
+                    availabilities,
+                )
+            },
+        )
         .collect()
 }
 
@@ -203,14 +232,16 @@ pub async fn update_content(
     now: Timestamp,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE candidatures SET pseudo = ?, server = ?, class = ?, cp = ?, updated_at = ? \
-         WHERE id = ?",
+        "UPDATE candidatures SET pseudo = ?, server = ?, class = ?, cp = ?, updated_at = ?, \
+         teams = ?, preferred_team = ? WHERE id = ?",
     )
     .bind(&candidature.pseudo)
     .bind(&candidature.server)
     .bind(&candidature.class)
     .bind(i64::from(candidature.cp))
     .bind(now)
+    .bind(candidature.teams.mask())
+    .bind(candidature.teams.preferred.map(i64::from))
     .bind(id)
     .execute(&mut *conn)
     .await?;

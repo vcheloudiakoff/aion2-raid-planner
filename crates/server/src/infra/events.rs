@@ -4,7 +4,9 @@
 
 use domain::Timestamp;
 use domain::candidature::CandidatureStatus;
-use domain::event::{EventStatus, FactionScope, ValidEvent, ValidSettings, ValidSlot, Visibility};
+use domain::event::{
+    EventStatus, FactionScope, TeamRoles, ValidEvent, ValidSettings, ValidSlot, Visibility,
+};
 use sqlx::SqliteConnection;
 use sqlx::sqlite::SqlitePool;
 
@@ -96,6 +98,8 @@ pub struct EventSnapshot {
     pub bounds: Vec<BoundRow>,
     /// Classe de chaque candidature `pending` ou `accepted`.
     pub counted_classes: Vec<String>,
+    /// Rôles demandés par Équipe (0004).
+    pub team_roles: TeamRoles,
 }
 
 fn decode<T>(value: Option<T>, column: &'static str) -> Result<T, sqlx::Error> {
@@ -116,6 +120,7 @@ type EventColumns = (
     Option<i64>,
     String,
     Option<Timestamp>,
+    String,
 );
 
 /// Lit l'événement, ses créneaux, ses bornes et les classes de ses candidatures comptées. `None` si
@@ -126,13 +131,23 @@ pub async fn load(
 ) -> Result<Option<EventSnapshot>, sqlx::Error> {
     let row: Option<EventColumns> = sqlx::query_as(
         "SELECT id, instance, region, faction_scope, visibility, status, min_cp, note, \
-         admin_unlisted_at FROM events WHERE id = ?",
+         admin_unlisted_at, team_roles FROM events WHERE id = ?",
     )
     .bind(event_id)
     .fetch_optional(&mut *conn)
     .await?;
-    let Some((id, instance, region, scope, visibility, status, min_cp, note, admin_unlisted_at)) =
-        row
+    let Some((
+        id,
+        instance,
+        region,
+        scope,
+        visibility,
+        status,
+        min_cp,
+        note,
+        admin_unlisted_at,
+        team_roles,
+    )) = row
     else {
         return Ok(None);
     };
@@ -190,6 +205,7 @@ pub async fn load(
             })
             .collect::<Result<_, sqlx::Error>>()?,
         counted_classes,
+        team_roles: decode(serde_json::from_str(&team_roles).ok(), "team_roles")?,
     }))
 }
 
@@ -268,6 +284,21 @@ pub async fn update_settings(
         .execute(&mut *conn)
         .await?;
     }
+    Ok(())
+}
+
+/// Remplace les rôles demandés par Équipe.
+pub async fn update_team_roles(
+    conn: &mut SqliteConnection,
+    event_id: &str,
+    team_roles: &TeamRoles,
+) -> Result<(), sqlx::Error> {
+    let json = serde_json::to_string(team_roles).unwrap_or_else(|_| "[]".into());
+    sqlx::query("UPDATE events SET team_roles = ? WHERE id = ?")
+        .bind(json)
+        .bind(event_id)
+        .execute(&mut *conn)
+        .await?;
     Ok(())
 }
 

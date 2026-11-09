@@ -20,6 +20,10 @@ export interface SlotPerson {
   classWarning: string | null;
   /** En brouillon : « plus acceptée » ou « absente », sinon `null`. */
   gone: string | null;
+  /** Équipes souhaitées en court (« É1★ É2 »), vide si peu importe. */
+  teams?: string;
+  /** Titulaire placé dans une Équipe qu'il n'a pas cochée. */
+  offTeam?: boolean;
 }
 
 interface Props {
@@ -72,6 +76,7 @@ export function RoomSlot({
           <span data-testid="slot-class" className="block text-meta text-ink-secondary [overflow-wrap:anywhere]">
             {person.role} · {person.className}
             {person.classWarning && <span className="text-danger"> · {person.classWarning}</span>}
+            {person.teams && <span data-testid="slot-teams"> · {person.teams}</span>}
           </span>
           <span className="block truncate font-mono text-[15px] leading-[1.4] font-medium text-ink-primary">
             {person.candidature?.pseudoSrv ?? person.id}
@@ -79,6 +84,11 @@ export function RoomSlot({
           {person.gone && (
             <span data-testid="slot-gone" className="block text-meta text-danger">
               {person.gone}
+            </span>
+          )}
+          {person.offTeam && (
+            <span data-testid="slot-off-team" className="block text-meta text-danger">
+              {t("composition.offTeam")}
             </span>
           )}
           {person.unavailable && (

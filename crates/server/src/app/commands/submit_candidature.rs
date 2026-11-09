@@ -58,7 +58,7 @@ pub async fn submit_candidature(
         return Err(Code::EventClosed.into());
     }
     let input: NewCandidature = body.data.into();
-    validate_candidature(&reference, &context(&event), now, input.clone())
+    validate_candidature(&reference, &context(&event, &reference), now, input.clone())
         .map_err(Problem::fields)?;
 
     let submitted = Submitted {
@@ -86,7 +86,7 @@ pub async fn submit_candidature(
 }
 
 /// Ce que la validation de candidature doit savoir de l'événement.
-pub(crate) fn context(event: &EventSnapshot) -> EventContext {
+pub(crate) fn context(event: &EventSnapshot, reference: &ReferenceSet) -> EventContext {
     EventContext {
         region: event.region.clone(),
         faction_scope: event.faction_scope,
@@ -99,6 +99,11 @@ pub(crate) fn context(event: &EventSnapshot) -> EventContext {
             })
             .collect(),
         classes: event.bounds.iter().map(|b| b.class.clone()).collect(),
+        parties: reference
+            .instances
+            .iter()
+            .find(|i| i.id == event.instance)
+            .map_or(1, |i| i.parties),
     }
 }
 
@@ -146,7 +151,7 @@ async fn write(
     }
     // Rejouée sur l'état relu dans la transaction : créneaux, région et portée peuvent avoir changé
     // depuis la lecture hors transaction.
-    let candidature = validate_candidature(reference, &context(&event), now, input)
+    let candidature = validate_candidature(reference, &context(&event, reference), now, input)
         .map_err(|e| WriteError::Refused(Problem::fields(e)))?;
     let candidature_id = submitted.candidature_id.as_str();
     candidatures::insert(

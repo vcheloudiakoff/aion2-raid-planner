@@ -181,9 +181,57 @@ pub enum EventError {
     DiscordUrlInvalid,
     MinCpOutOfRange,
     ClassBoundsInvalid,
+    TeamRolesInvalid,
     /// `instance`, `region` ou `factionScope` changé alors qu'une candidature existe : un conflit
     /// d'état (409), vérifié avant toute autre règle de champ.
     FieldImmutable,
+}
+
+/// Rôles demandés par Équipe : une entrée par Équipe (la première est l'Équipe 1),
+/// `roleId → nombre`, sans zéro. Un signal pour l'organisateur, jamais un refus de placement.
+pub type TeamRoles = Vec<BTreeMap<String, u32>>;
+
+/// Valide les rôles demandés pour une instance à `parties` Équipes de `party_size` : au plus une
+/// entrée par Équipe, des rôles connus de la référence, et au plus `party_size` joueurs demandés
+/// par Équipe. Les zéros sont retirés.
+pub fn validate_team_roles(
+    reference: &ReferenceSet,
+    parties: u32,
+    party_size: u32,
+    input: Vec<BTreeMap<String, i64>>,
+) -> Result<TeamRoles, FieldErrors> {
+    let mut errors: FieldErrors = Vec::new();
+    if input.len() > parties as usize {
+        errors.push(("teamRoles".into(), EventError::TeamRolesInvalid));
+    }
+    let mut out = Vec::with_capacity(input.len());
+    for (n, team) in input.into_iter().enumerate() {
+        let mut kept = BTreeMap::new();
+        let mut total: i64 = 0;
+        for (role, count) in team {
+            let known = reference.roles.iter().any(|r| r.id == role);
+            if !known || !(0..=i64::from(party_size)).contains(&count) {
+                errors.push((
+                    format!("teamRoles.{n}.{role}"),
+                    EventError::TeamRolesInvalid,
+                ));
+                continue;
+            }
+            total += count;
+            if count > 0 {
+                kept.insert(role, count as u32);
+            }
+        }
+        if total > i64::from(party_size) {
+            errors.push((format!("teamRoles.{n}"), EventError::TeamRolesInvalid));
+        }
+        out.push(kept);
+    }
+    if errors.is_empty() {
+        Ok(out)
+    } else {
+        Err(errors)
+    }
 }
 
 /// Chemin JSON camelCase du champ fautif (`slots.2.startsAt`) et son cas.

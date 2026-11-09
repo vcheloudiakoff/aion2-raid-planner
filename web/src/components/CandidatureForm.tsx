@@ -36,6 +36,9 @@ export interface CandidatureValues {
   class?: string;
   cp?: string;
   checked?: Record<string, boolean>;
+  /** Équipes cochées (à partir de 1) et Équipe préférée. */
+  teams?: number[];
+  preferredTeam?: number;
 }
 
 export interface CandidatureFormProps {
@@ -85,6 +88,8 @@ export function CandidatureForm({
   const [cp, setCp] = useState(initial.cp ?? "");
   /** Créneaux cochés → préféré. */
   const [checked, setChecked] = useState<Record<string, boolean>>(initial.checked ?? {});
+  const [teams, setTeams] = useState<number[]>(initial.teams ?? []);
+  const [preferredTeam, setPreferredTeam] = useState<number | undefined>(initial.preferredTeam);
   const [website, setWebsite] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +113,7 @@ export function CandidatureForm({
   const missingClass = reference && current && !reference.classes.some((c) => c.id === current.class) ? current.class : null;
   const serverValue = server?.id ?? (serverId !== "" && serverId === missingServer ? serverId : "");
   const classValue = gameClass?.id ?? (classId !== "" && classId === missingClass ? classId : "");
+  const parties = reference?.instances.find((i) => i.id === event.instance)?.parties ?? 1;
   const upcoming = event.slots.filter((s) => Date.parse(s.startsAt) > now());
   const picked = upcoming.filter((s) => s.id in checked);
   const cpValue = cp.trim();
@@ -159,6 +165,14 @@ export function CandidatureForm({
     setChecked((all) => (slotId in all ? { ...all, [slotId]: !all[slotId] } : all));
   }
 
+  function toggleTeam(n: number) {
+    clearField("teams");
+    clearField("preferredTeam");
+    const next = teams.includes(n) ? teams.filter((x) => x !== n) : [...teams, n].sort((a, b) => a - b);
+    setTeams(next);
+    if (next.length < 2 || (preferredTeam !== undefined && !next.includes(preferredTeam))) setPreferredTeam(undefined);
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (reason || sending || !serverValue || !classValue) return;
@@ -169,6 +183,10 @@ export function CandidatureForm({
       cp: Number(cpValue),
       availabilities: picked.map((s) => ({ slotId: s.id, preferred: checked[s.id] === true })),
     };
+    if (parties > 1 && teams.length > 0) {
+      input.teams = teams;
+      if (teams.length > 1 && preferredTeam !== undefined) input.preferredTeam = preferredTeam;
+    }
     setSending(true);
     setError(null);
     setFields({});
@@ -375,6 +393,57 @@ export function CandidatureForm({
         </ul>
         {errorLine("availabilities", true)}
       </fieldset>
+
+      {parties > 1 && (
+        <fieldset>
+          <legend className={label}>{t("event.teams")}</legend>
+          <p className="text-meta text-ink-secondary">{t("event.teams.hint")}</p>
+          <ul className="mt-2 flex flex-col gap-2">
+            {Array.from({ length: parties }, (_, i) => i + 1).map((n) => {
+              const on = teams.includes(n);
+              const star = preferredTeam === n;
+              const name = t("event.team", { n });
+              return (
+                <li key={n} data-testid={`team-${n}`} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleTeam(n)}
+                    className={`flex min-h-tap min-w-0 flex-1 items-center gap-3 rounded-md border px-3 text-left text-label ${
+                      on ? "border-2 border-available text-ink-primary" : "border-border text-ink-secondary"
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`flex size-6 shrink-0 items-center justify-center rounded-sm ${
+                        on ? "bg-available text-on-accent" : "bg-surface-sunken"
+                      }`}
+                    >
+                      {on ? "✓" : "–"}
+                    </span>
+                    <span>{name}</span>
+                  </button>
+                  {on && teams.length > 1 && (
+                    <button
+                      type="button"
+                      aria-pressed={star}
+                      aria-label={t("event.team.preferred", { team: name })}
+                      onClick={() => setPreferredTeam(star ? undefined : n)}
+                      className={`flex size-tap shrink-0 items-center justify-center rounded-md border text-title ${
+                        star ? "border-accent text-accent" : "border-border text-ink-secondary"
+                      }`}
+                    >
+                      {star ? "★" : "☆"}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {errorLine("teams")}
+          {errorLine("preferredTeam")}
+        </fieldset>
+      )}
 
       {/* Honeypot : invisible et hors du parcours clavier, laissé vide par un humain. */}
       {honeypot && (

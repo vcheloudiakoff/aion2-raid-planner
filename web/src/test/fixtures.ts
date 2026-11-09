@@ -123,6 +123,7 @@ export const participantView: ParticipantView = {
     { slotId: "slot_past", preferred: false },
     { slotId: "slot_a", preferred: true },
   ],
+  teams: [],
   event: publicEvent,
 };
 
@@ -144,6 +145,7 @@ const candidature = (patch: Partial<OrganizerCandidature> & Pick<OrganizerCandid
   origin: "public",
   availabilities: [],
   duplicate: false,
+  teams: [],
   ...patch,
 });
 
@@ -152,6 +154,7 @@ export const organizerEvent: OrganizerEvent = {
   event: publicEvent,
   discordUrl: "https://discord.gg/abcdef",
   classBounds: { c1: { min: 1, max: 3 }, c2: { min: 1, max: 10 } },
+  teamRoles: [],
   // Comptes des seules `accepted` : Kael (c2, A et B) et nyra (c1, B).
   slots: [
     { slotId: "slot_past", availableAccepted: 0, coverage: { c1: 0, c2: 0 }, hasGroups: false },

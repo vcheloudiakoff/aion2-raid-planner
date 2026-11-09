@@ -151,6 +151,10 @@ export interface SubmitCandidature {
   class: string;
   cp: number;
   availabilities: { slotId: string; preferred: boolean }[];
+  /** Équipes souhaitées (numéros à partir de 1), vide = peu importe. */
+  teams?: number[];
+  /** Équipe préférée, seulement si au moins deux Équipes sont cochées. */
+  preferredTeam?: number;
 }
 
 /** Réponse 201 d'une candidature, rendue une seule fois. Chemin relatif, à préfixer par
@@ -180,6 +184,9 @@ export interface ParticipantView {
   status: CandidatureStatus;
   /** Triées par début de créneau, créneaux passés compris. */
   availabilities: { slotId: string; preferred: boolean }[];
+  /** Équipes souhaitées, vide = peu importe. */
+  teams: number[];
+  preferredTeam?: number;
   event: PublicEvent;
   discordUrl?: string;
   placement?: ParticipantPlacement;
@@ -246,6 +253,9 @@ export interface OrganizerCandidature {
   /** Triées par début de créneau, créneaux passés compris. */
   availabilities: Availability[];
   duplicate: boolean;
+  /** Équipes souhaitées, vide = peu importe. */
+  teams: number[];
+  preferredTeam?: number;
 }
 
 /** `GET /api/organizer` et réponse des commandes de l'organisateur, sous son lien `/o/`. `discordUrl`
@@ -255,6 +265,8 @@ export interface OrganizerEvent {
   discordUrl?: string;
   /** `classId → bornes`, une entrée par classe bornée de l'événement. */
   classBounds: Record<string, { min: number; max: number }>;
+  /** Rôles demandés par Équipe, `roleId → nombre`, la première entrée pour l'Équipe 1. */
+  teamRoles: Record<string, number>[];
   /** Une entrée par créneau, dans l'ordre de `event.slots`. */
   slots: OrganizerSlot[];
   /** Groupes, en sommeil compris (`retained` faux), triés par début de créneau puis par
@@ -345,6 +357,8 @@ export interface UpdateEventSettings {
   visibility: Visibility;
   minCp?: number;
   classBounds: Record<string, { min: number; max: number }>;
+  /** Absent : les rôles demandés par Équipe ne changent pas. */
+  teamRoles?: Record<string, number>[];
 }
 
 /** Corps de `POST /api/organizer/slot-removal`. */

@@ -28,6 +28,7 @@ const cand = (id: string, patch: Partial<OrganizerCandidature>): OrganizerCandid
   origin: "direct",
   availabilities: [{ slotId: "slot_a", preferred: false }],
   duplicate: false,
+  teams: [],
   ...patch,
 });
 

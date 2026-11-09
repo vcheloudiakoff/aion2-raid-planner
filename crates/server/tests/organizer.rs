@@ -134,6 +134,8 @@ async fn read_lists_every_candidature_in_creation_order_with_pseudo_srv() {
             "server": "siel",
             "class": "templar",
             "availabilities": [{ "slotId": e.slots[1], "preferred": false }],
+            "teams": [2, 1],
+            "preferredTeam": 2,
         }),
         false,
     )
@@ -155,7 +157,8 @@ async fn read_lists_every_candidature_in_creation_order_with_pseudo_srv() {
             "discordUrl",
             "event",
             "groups",
-            "slots"
+            "slots",
+            "teamRoles"
         ]
     );
     assert_eq!(v["discordUrl"], "https://discord.gg/abcdef");
@@ -171,11 +174,13 @@ async fn read_lists_every_candidature_in_creation_order_with_pseudo_srv() {
             "duplicate",
             "id",
             "origin",
+            "preferredTeam",
             "pseudo",
             "pseudoSrv",
             "role",
             "server",
-            "status"
+            "status",
+            "teams"
         ]
     );
     assert_eq!(
@@ -192,6 +197,8 @@ async fn read_lists_every_candidature_in_creation_order_with_pseudo_srv() {
             "origin": "public",
             "availabilities": [{ "slotId": e.slots[1], "preferred": false }],
             "duplicate": false,
+            "teams": [1, 2],
+            "preferredTeam": 2,
         })
     );
     let nyra = find(&v, &a);

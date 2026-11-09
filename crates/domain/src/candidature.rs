@@ -96,6 +96,37 @@ pub struct NewAvailability {
     pub preferred: bool,
 }
 
+/// Équipes souhaitées par le joueur dans un groupe à plusieurs Équipes (Ludra : 2 × 5). `teams`
+/// vide = peu importe ; `preferred` (l'étoile) n'a de sens que si au moins deux Équipes sont
+/// cochées. Numéros à partir de 1.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TeamChoice {
+    pub teams: Vec<u32>,
+    pub preferred: Option<u32>,
+}
+
+impl TeamChoice {
+    /// Masque stocké en base : bit `n - 1` pour l'Équipe `n`.
+    pub fn mask(&self) -> i64 {
+        self.teams
+            .iter()
+            .filter(|&&t| (1..=62).contains(&t))
+            .fold(0, |m, t| m | (1i64 << (t - 1)))
+    }
+
+    /// Relit le masque stocké ; `None` si négatif.
+    pub fn from_mask(mask: i64, preferred: Option<i64>) -> Option<Self> {
+        if mask < 0 {
+            return None;
+        }
+        let teams = (1..=62u32)
+            .filter(|t| mask & (1i64 << (t - 1)) != 0)
+            .collect();
+        let preferred = preferred.and_then(|p| u32::try_from(p).ok());
+        Some(Self { teams, preferred })
+    }
+}
+
 /// Saisie brute du joueur, avant toute règle.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewCandidature {
@@ -104,6 +135,7 @@ pub struct NewCandidature {
     pub class: String,
     pub cp: i64,
     pub availabilities: Vec<NewAvailability>,
+    pub teams: TeamChoice,
 }
 
 /// Créneau de l'événement visé.
@@ -121,6 +153,8 @@ pub struct EventContext {
     pub slots: Vec<SlotRef>,
     /// Classes qui ont une ligne `class_bounds` dans l'événement.
     pub classes: Vec<String>,
+    /// Nombre d'Équipes par groupe de l'instance (1 si l'instance est inconnue).
+    pub parties: u32,
 }
 
 /// Candidature prête à écrire.
@@ -131,6 +165,7 @@ pub struct ValidCandidature {
     pub class: String,
     pub cp: u32,
     pub availabilities: Vec<NewAvailability>,
+    pub teams: TeamChoice,
 }
 
 /// Cas d'erreur d'un champ ; la couche `http` le traduit en code `<entité>.<cas>`.
@@ -144,6 +179,7 @@ pub enum CandidatureError {
     NoAvailability,
     SlotUnknown,
     SlotInPast,
+    TeamInvalid,
 }
 
 /// Chemin JSON camelCase du champ fautif (`availabilities.2.slotId`) et son cas.
@@ -296,6 +332,19 @@ fn validate(
         }
     }
 
+    let mut teams = input.teams.teams.clone();
+    teams.sort_unstable();
+    teams.dedup();
+    if teams.len() != input.teams.teams.len() || teams.iter().any(|t| *t == 0 || *t > event.parties)
+    {
+        fail("teams".into(), CandidatureError::TeamInvalid);
+    }
+    if let Some(p) = input.teams.preferred
+        && (teams.len() < 2 || !teams.contains(&p))
+    {
+        fail("preferredTeam".into(), CandidatureError::TeamInvalid);
+    }
+
     match cp {
         Some(cp) if errors.is_empty() => Ok((
             ValidCandidature {
@@ -304,6 +353,10 @@ fn validate(
                 class: input.class,
                 cp,
                 availabilities: input.availabilities,
+                teams: TeamChoice {
+                    teams,
+                    preferred: input.teams.preferred,
+                },
             },
             kept,
         )),
@@ -546,6 +599,7 @@ mod tests {
             ],
             // `c_new` est active dans la référence mais n'a pas de borne dans cet événement.
             classes: vec!["c1".into(), "c2".into(), "c_off".into()],
+            parties: 2,
         }
     }
 
@@ -563,6 +617,7 @@ mod tests {
             class: "c1".into(),
             cp: 1500,
             availabilities: vec![avail("s1", true), avail("s2", true)],
+            teams: TeamChoice::default(),
         }
     }
 
@@ -572,6 +627,37 @@ mod tests {
 
     fn errors(i: NewCandidature) -> CandidatureErrors {
         errors_with(&event(), i)
+    }
+
+    #[test]
+    fn team_choice_is_checked_against_the_parties() {
+        let with = |teams: Vec<u32>, preferred: Option<u32>| {
+            let mut i = input();
+            i.teams = TeamChoice { teams, preferred };
+            i
+        };
+        let ok =
+            validate_candidature(&reference(), &event(), now(), with(vec![2, 1], Some(2))).unwrap();
+        assert_eq!(ok.teams.teams, vec![1, 2]);
+        assert_eq!(ok.teams.preferred, Some(2));
+        assert!(validate_candidature(&reference(), &event(), now(), with(vec![], None)).is_ok());
+        assert_eq!(
+            errors(with(vec![3], None)),
+            one("teams", CandidatureError::TeamInvalid)
+        );
+        assert_eq!(
+            errors(with(vec![1, 1], None)),
+            one("teams", CandidatureError::TeamInvalid)
+        );
+        assert_eq!(
+            errors(with(vec![1], Some(1))),
+            one("preferredTeam", CandidatureError::TeamInvalid)
+        );
+        let t = TeamChoice {
+            teams: vec![1, 2],
+            preferred: Some(1),
+        };
+        assert_eq!(TeamChoice::from_mask(t.mask(), Some(1)), Some(t));
     }
 
     fn one(path: &str, e: CandidatureError) -> CandidatureErrors {
@@ -691,6 +777,7 @@ mod tests {
             class: "nope".into(),
             cp: 1_000_000,
             availabilities: vec![avail("s1", false), avail("x", true)],
+            teams: TeamChoice::default(),
         };
         assert_eq!(
             errors(i),
@@ -852,6 +939,7 @@ mod tests {
             class: "c1".into(),
             cp: -1,
             availabilities: vec![avail("past", false)],
+            teams: TeamChoice::default(),
         };
         assert_eq!(
             update_errors(&current(), i),

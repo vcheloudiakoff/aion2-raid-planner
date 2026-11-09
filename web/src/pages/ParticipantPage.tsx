@@ -413,6 +413,8 @@ export function ParticipantPage({ reference, origin = window.location.origin, de
                     .filter((a) => isUpcoming(view, a.slotId, deps.now))
                     .map((a) => [a.slotId, a.preferred]),
                 ),
+                teams: view.teams,
+                preferredTeam: view.preferredTeam,
               }}
               current={{ server: view.server, class: view.class }}
               kept={view.availabilities.filter((a) => isPast(view, a.slotId, deps.now)).length}

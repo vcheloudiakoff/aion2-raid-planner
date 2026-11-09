@@ -111,7 +111,8 @@ async fn read_shows_only_its_own_candidature_and_the_public_event() {
             "eventId",
             "pseudo",
             "server",
-            "status"
+            "status",
+            "teams"
         ]
     );
     assert_eq!(v["eventId"], e.id);

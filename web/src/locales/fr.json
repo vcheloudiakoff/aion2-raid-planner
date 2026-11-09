@@ -371,5 +371,16 @@
   "errors.slot.duration_out_of_range": "La durée va de 15 min à 12 h.",
   "errors.slot.in_past": "Ce créneau est déjà passé.",
   "errors.slot.not_found": "Ce créneau n'existe plus.",
-  "organizer.joinMissing": "Le lien direct n'est gardé que dans le navigateur qui a créé le raid."
+  "organizer.joinMissing": "Le lien direct n'est gardé que dans le navigateur qui a créé le raid.",
+  "event.teams": "Équipe",
+  "event.teams.hint": "Coche celles qui te vont (rien = peu importe), ☆ pour ta préférée.",
+  "event.team": "Équipe {n}",
+  "event.team.preferred": "Préférée : {team}",
+  "organizer.teamShort": "É{n}",
+  "composition.offTeam": "Hors de ses Équipes",
+  "editor.teamRoles": "Rôles demandés par Équipe",
+  "editor.teamRoles.hint": "Un repère pour la composition, rien n'est refusé.",
+  "editor.teamRoles.of": "{role}, {team}",
+  "errors.candidature.team_invalid": "Choix d'Équipe invalide. Recharge la page.",
+  "errors.event.team_roles_invalid": "Plus de rôles demandés que l'Équipe n'a de places."
 }

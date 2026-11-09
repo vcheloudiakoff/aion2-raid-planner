@@ -43,6 +43,7 @@ import {
 } from "../lib/form";
 import { formatDay, formatSlot, localInputToUtc, timeZoneLabel } from "../lib/time";
 import { BoundsEditor } from "./BoundsEditor";
+import { TeamRolesEditor } from "./TeamRolesEditor";
 import { ConfirmSheet } from "./ConfirmSheet";
 import { DiscordField, ListedField, MinCpField, NoteField, controlClass, labelClass } from "./EventFields";
 import { FactionDot, Summary } from "./EventSummary";
@@ -141,6 +142,21 @@ interface Draft {
    * valeur rapportée est vide, mais ce n'est pas un effacement. */
   minCpBad: boolean;
   bounds: Record<string, Bound>;
+  /** Rôles demandés par Équipe, `roleId → nombre`. */
+  teamRoles: Record<string, number>[];
+}
+
+/** Forme comparable des rôles demandés : sans zéro, sans Équipe vide en fin, clés triées. */
+function rolesKey(teamRoles: Record<string, number>[]): string {
+  const teams = teamRoles.map((r) =>
+    Object.fromEntries(
+      Object.entries(r)
+        .filter(([, n]) => n > 0)
+        .sort(([a], [b]) => a.localeCompare(b)),
+    ),
+  );
+  while (teams.length > 0 && Object.keys(teams[teams.length - 1]).length === 0) teams.pop();
+  return JSON.stringify(teams);
 }
 
 function fromView(v: OrganizerEvent): Draft {
@@ -154,6 +170,7 @@ function fromView(v: OrganizerEvent): Draft {
     minCp: v.event.minCp === undefined ? "" : String(v.event.minCp),
     minCpBad: false,
     bounds: v.classBounds,
+    teamRoles: v.teamRoles ?? [],
   };
 }
 
@@ -168,6 +185,7 @@ function sameDraft(a: Draft, b: Draft): boolean {
     a.listed === b.listed &&
     a.minCp.trim() === b.minCp.trim() &&
     a.minCpBad === b.minCpBad &&
+    rolesKey(a.teamRoles) === rolesKey(b.teamRoles) &&
     ids.length === Object.keys(b.bounds).length &&
     ids.every((id) => b.bounds[id]?.min === a.bounds[id].min && b.bounds[id]?.max === a.bounds[id].max)
   );
@@ -277,6 +295,7 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
       note: effective.note,
       visibility: effective.listed ? "listed" : "unlisted",
       classBounds: effective.bounds,
+      teamRoles: JSON.parse(rolesKey(effective.teamRoles)) as Record<string, number>[],
       ...(discord !== "" && { discordUrl: discord }),
       ...(cp !== "" && { minCp: Number(cp) }),
     };
@@ -534,6 +553,16 @@ function Editor({ view, reference, now, busy, actions, fallbackFocus }: Props) {
             errors={errors}
             onChange={(id, b) => setDraft((d) => ({ ...d, bounds: { ...d.bounds, [id]: b } }))}
           />
+          {instance && reference && (
+            <TeamRolesEditor
+              parties={instance.parties}
+              partySize={instance.partySize}
+              roles={reference.roles.filter((r) => r.enabled).map((r) => ({ id: r.id, name: labelOf(r.label, lang) }))}
+              value={draft.teamRoles}
+              errors={errors}
+              onChange={(teamRoles) => patch({ teamRoles })}
+            />
+          )}
         </section>
 
         <div>

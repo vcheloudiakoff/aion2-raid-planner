@@ -45,6 +45,7 @@ import { SleepingGroups } from "./SleepingGroups";
 import { ReserveSheet } from "./ReserveSheet";
 import { RoomSlot, type SlotPerson } from "./RoomSlot";
 import { SlotActions } from "./SlotActions";
+import { teamsText } from "./CandidatureRow";
 
 /** Avertissements d'un groupe : candidatures hors créneau, classes hors bornes. */
 export interface GroupWarnings {
@@ -275,7 +276,7 @@ export function Composition({
     text: t("composition.classWarning", { class: classLabel(cls), text: warningText(w) }),
   }));
 
-  const person = (id: string): SlotPerson => {
+  const person = (id: string, party?: number): SlotPerson => {
     const c: OrganizerCandidature | null = byId.get(id) ?? null;
     const w = c ? warnings.classWarnings[c.class] : undefined;
     // En brouillon, une candidature disparue de la vue ou qui n'est plus `accepted` ferait échouer
@@ -295,7 +296,22 @@ export function Composition({
       unavailable: warnings.unavailable.has(id),
       classWarning: w ? warningText(w) : null,
       gone,
+      teams: c && group.parties > 1 ? teamsText(c) : "",
+      offTeam: !!c && party !== undefined && c.teams.length > 0 && !c.teams.includes(party),
     };
+  };
+  /** Rôles demandés pour l'Équipe `party` moins ses titulaires de ce rôle, strictement positifs. */
+  const teamMissing = (party: number): { role: string; missing: number }[] => {
+    const wanted = view.teamRoles?.[party - 1] ?? {};
+    const have = new Map<string, number>();
+    for (const index of Array.from({ length: group.partySize }, (_, i) => i + 1)) {
+      const role = byId.get(gp.starters[slotKey(party, index)] ?? "")?.role;
+      if (role !== undefined) have.set(role, (have.get(role) ?? 0) + 1);
+    }
+    return Object.entries(wanted)
+      .map(([role, want]) => ({ role, missing: want - (have.get(role) ?? 0) }))
+      .filter((m) => m.missing > 0)
+      .sort((a, b) => (a.role < b.role ? -1 : a.role > b.role ? 1 : 0));
   };
   const errorAt = (seat: Seat) => seatErrors.find((e) => sameSeat(e.seat, seat))?.message ?? null;
   /** Nom accessible : la place, l'occupant ou « libre », puis chaque avertissement. */
@@ -304,6 +320,7 @@ export function Composition({
       place,
       p?.gone,
       p?.unavailable ? t("composition.unavailable") : null,
+      p?.offTeam ? t("composition.offTeam") : null,
       p?.classWarning ? `${p.className} ${p.classWarning}` : null,
       error,
     ]
@@ -424,11 +441,18 @@ export function Composition({
           <h3 id={`${ids}-party-${party}`} className="text-label text-ink-secondary">
             {t("composition.party", { n: party })}
           </h3>
+          {teamMissing(party).length > 0 && (
+            <p data-testid={`party-missing-${party}`} className="text-meta text-danger">
+              {teamMissing(party)
+                .map((m) => t("event.missing", { count: m.missing, role: roleLabel(reference, m.role, lang) }))
+                .join(" · ")}
+            </p>
+          )}
           <ol aria-labelledby={`${ids}-party-${party}`} className="mt-1 flex flex-col gap-1">
             {indexes.map((index) => {
               const seat: Seat = { groupId: group.id, party, index };
               const id = gp.starters[slotKey(party, index)];
-              const p = id ? person(id) : null;
+              const p = id ? person(id, party) : null;
               const error = errorAt(seat);
               return (
                 <li key={index}>
