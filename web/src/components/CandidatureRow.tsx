@@ -7,7 +7,7 @@
 import { labelOf } from "../api/reference";
 import type { CandidatureStatus, OrganizerCandidature, ReferenceSet } from "../api/types";
 import { t, useLang, type MessageKey } from "../i18n";
-import { ClassIcon } from "./AcceptedList";
+import { ClassIcon } from "./ClassIcon";
 import { FactionDot } from "./EventSummary";
 
 const STATUS_KEY: Record<CandidatureStatus, MessageKey> = {

@@ -5,7 +5,8 @@
 #   role        id d'un rôle de `roles.toml`
 #   default_min nombre minimal par défaut dans un événement, entier ≥ 0
 #   default_max nombre maximal par défaut, entier ≥ default_min
-#   icon        facultatif : icône courte (un emoji) affichée devant le nom de classe
+#   icon        facultatif : dessin de l'interface (sword, shield, daggers, bow, flame, spirit, cross,
+#               note), coloré selon le rôle ; toute autre valeur (un emoji) s'affiche telle quelle
 #   label       { en = "…", fr = "…" } : `en` obligatoire, `fr` facultatif (repli sur `en`)
 #   enabled     facultatif, `true` par défaut ; retrait par `enabled = false`, jamais par suppression
 #
@@ -17,7 +18,7 @@ id = "gladiator"
 role = "dps"
 default_min = 0
 default_max = 10
-icon = "⚔️"
+icon = "sword"
 label = { en = "Gladiator", fr = "Gladiateur" }
 
 [[class]]
@@ -25,7 +26,7 @@ id = "templar"
 role = "tank"
 default_min = 0
 default_max = 10
-icon = "🛡️"
+icon = "shield"
 label = { en = "Templar", fr = "Templier" }
 
 [[class]]
@@ -33,7 +34,7 @@ id = "assassin"
 role = "dps"
 default_min = 0
 default_max = 10
-icon = "🗡️"
+icon = "daggers"
 label = { en = "Assassin", fr = "Assassin" }
 
 [[class]]
@@ -41,7 +42,7 @@ id = "ranger"
 role = "dps"
 default_min = 0
 default_max = 10
-icon = "🏹"
+icon = "bow"
 label = { en = "Ranger", fr = "Rôdeur" }
 
 [[class]]
@@ -49,7 +50,7 @@ id = "sorcerer"
 role = "dps"
 default_min = 0
 default_max = 10
-icon = "🔥"
+icon = "flame"
 label = { en = "Sorcerer", fr = "Sorcier" }
 
 [[class]]
@@ -57,7 +58,7 @@ id = "spiritmaster"
 role = "dps"
 default_min = 0
 default_max = 10
-icon = "🌀"
+icon = "spirit"
 label = { en = "Spiritmaster", fr = "Spiritualiste" }
 
 [[class]]
@@ -65,7 +66,7 @@ id = "cleric"
 role = "healer"
 default_min = 0
 default_max = 10
-icon = "✨"
+icon = "cross"
 label = { en = "Cleric", fr = "Clerc" }
 
 [[class]]
@@ -73,5 +74,5 @@ id = "chanter"
 role = "support"
 default_min = 0
 default_max = 10
-icon = "🎵"
+icon = "note"
 label = { en = "Chanter", fr = "Aède" }

@@ -45,7 +45,7 @@ export interface GameClass {
   role: string;
   defaultMin: number;
   defaultMax: number;
-  /** Icône courte (un emoji), facultative. */
+  /** Dessin de l'interface (`sword`, `shield`…) ou emoji, facultatif. */
   icon?: string;
   label: Label;
   enabled: boolean;

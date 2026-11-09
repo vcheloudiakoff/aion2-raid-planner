@@ -99,7 +99,8 @@ pub struct Class {
     pub role: String,
     pub default_min: u32,
     pub default_max: u32,
-    /// Icône courte (un emoji) affichée devant le nom de classe ; facultative.
+    /// Dessin de l'interface (`sword`, `shield`…) ou emoji, affiché devant le nom de classe ;
+    /// facultatif.
     #[serde(default)]
     pub icon: Option<String>,
     pub label: Label,

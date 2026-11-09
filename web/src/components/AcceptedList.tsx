@@ -11,6 +11,7 @@ import type { ParticipantView, PublicSlot, ReferenceSet, RosterEntry } from "../
 import { t, useLang } from "../i18n";
 import { formatSlot } from "../lib/time";
 import { teamsText } from "./CandidatureRow";
+import { ClassIcon } from "./ClassIcon";
 
 /** En dessous de ce nombre d'acceptés, la section s'ouvre d'elle-même. */
 export const OPEN_BELOW = 15;
@@ -39,17 +40,6 @@ interface RosterProps {
   self: number | undefined;
   slots: PublicSlot[];
   reference: ReferenceSet | null;
-}
-
-/** Icône de la classe, lue dans la référence ; rien si elle n'en a pas. */
-export function ClassIcon({ classId, reference }: { classId: string; reference: ReferenceSet | null }) {
-  const icon = reference?.classes.find((c) => c.id === classId)?.icon;
-  if (!icon) return null;
-  return (
-    <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-sm bg-surface-sunken text-[14px]">
-      {icon}
-    </span>
-  );
 }
 
 function Roster({ entries, self, slots, reference }: RosterProps) {
