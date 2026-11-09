@@ -6,7 +6,8 @@
 #   default_min nombre minimal par défaut dans un événement, entier ≥ 0
 #   default_max nombre maximal par défaut, entier ≥ default_min
 #   icon        facultatif : dessin de l'interface (sword, shield, daggers, bow, flame, spirit, cross,
-#               note), coloré selon le rôle ; toute autre valeur (un emoji) s'affiche telle quelle
+#               note) ; toute autre valeur (un emoji) s'affiche telle quelle
+#   color       facultatif : couleur de l'icône, "#rrggbb" ; sans elle, la couleur du rôle
 #   label       { en = "…", fr = "…" } : `en` obligatoire, `fr` facultatif (repli sur `en`)
 #   enabled     facultatif, `true` par défaut ; retrait par `enabled = false`, jamais par suppression
 #
@@ -19,6 +20,7 @@ role = "dps"
 default_min = 0
 default_max = 10
 icon = "sword"
+color = "#5cc8ff"
 label = { en = "Gladiator", fr = "Gladiateur" }
 
 [[class]]
@@ -27,6 +29,7 @@ role = "tank"
 default_min = 0
 default_max = 10
 icon = "shield"
+color = "#3b6fe0"
 label = { en = "Templar", fr = "Templier" }
 
 [[class]]
@@ -35,6 +38,7 @@ role = "dps"
 default_min = 0
 default_max = 10
 icon = "daggers"
+color = "#6ee07a"
 label = { en = "Assassin", fr = "Assassin" }
 
 [[class]]
@@ -43,6 +47,7 @@ role = "dps"
 default_min = 0
 default_max = 10
 icon = "bow"
+color = "#2e9e4f"
 label = { en = "Ranger", fr = "Rôdeur" }
 
 [[class]]
@@ -51,6 +56,7 @@ role = "dps"
 default_min = 0
 default_max = 10
 icon = "flame"
+color = "#b48cff"
 label = { en = "Sorcerer", fr = "Sorcier" }
 
 [[class]]
@@ -59,6 +65,7 @@ role = "dps"
 default_min = 0
 default_max = 10
 icon = "spirit"
+color = "#7a3fd1"
 label = { en = "Spiritmaster", fr = "Spiritualiste" }
 
 [[class]]
@@ -67,6 +74,7 @@ role = "healer"
 default_min = 0
 default_max = 10
 icon = "cross"
+color = "#f2b632"
 label = { en = "Cleric", fr = "Clerc" }
 
 [[class]]
@@ -75,4 +83,5 @@ role = "support"
 default_min = 0
 default_max = 10
 icon = "note"
+color = "#f08a24"
 label = { en = "Chanter", fr = "Aède" }

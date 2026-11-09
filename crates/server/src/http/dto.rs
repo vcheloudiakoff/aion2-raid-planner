@@ -88,6 +88,8 @@ pub struct Class {
     pub default_max: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     pub label: Label,
     pub enabled: bool,
 }
@@ -191,6 +193,7 @@ impl From<&r::ReferenceSet> for ReferenceSet {
                     default_min: x.default_min,
                     default_max: x.default_max,
                     icon: x.icon.clone(),
+                    color: x.color.clone(),
                     label: (&x.label).into(),
                     enabled: x.enabled,
                 })

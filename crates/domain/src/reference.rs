@@ -103,6 +103,9 @@ pub struct Class {
     /// facultatif.
     #[serde(default)]
     pub icon: Option<String>,
+    /// Couleur de l'icône, `#rrggbb` ; facultative (repli sur la couleur du rôle).
+    #[serde(default)]
+    pub color: Option<String>,
     pub label: Label,
     #[serde(default = "enabled_by_default")]
     pub enabled: bool,
@@ -285,6 +288,8 @@ pub enum IssueCause {
     RoomLabelTooLong(u32),
     #[error("room_label contains `{0}`, outside room_label_charset")]
     RoomLabelOutsideCharset(char),
+    #[error("color must be #rrggbb")]
+    BadColor,
 }
 
 /// Vérifie tous les contrôles de `reference-schema.md` et rend la liste complète des violations.
@@ -393,6 +398,12 @@ pub fn validate(set: &ReferenceSet) -> Result<(), Vec<ReferenceIssue>> {
         }
         if c.default_min > c.default_max {
             push(f, &entry, IssueCause::MinAboveMax);
+        }
+        if let Some(color) = &c.color {
+            let hex = color.strip_prefix('#').unwrap_or("");
+            if hex.len() != 6 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                push(f, &entry, IssueCause::BadColor);
+            }
         }
     }
 
@@ -513,6 +524,7 @@ mod tests {
                 default_min: 0,
                 default_max: 0,
                 icon: None,
+                color: None,
                 label: label("Class"),
                 enabled: true,
             }],

@@ -47,6 +47,8 @@ export interface GameClass {
   defaultMax: number;
   /** Dessin de l'interface (`sword`, `shield`…) ou emoji, facultatif. */
   icon?: string;
+  /** Couleur de l'icône, `#rrggbb`, facultative (repli sur la couleur du rôle). */
+  color?: string;
   label: Label;
   enabled: boolean;
 }

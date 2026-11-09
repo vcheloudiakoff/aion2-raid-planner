@@ -161,6 +161,7 @@ mod tests {
             default_min: 0,
             default_max: 10,
             icon: None,
+            color: None,
             label: label(id),
             enabled: true,
         }

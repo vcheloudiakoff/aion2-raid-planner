@@ -1,5 +1,5 @@
 // Icône de classe : dessins originaux en SVG (trait `currentColor`), choisis par le champ `icon` de
-// `classes.toml` et colorés selon le rôle de la classe. Une valeur inconnue des dessins s'affiche
+// `classes.toml` et colorés par son champ `color`, ou à défaut selon le rôle de la classe. Une valeur inconnue des dessins s'affiche
 // telle quelle (un emoji, par exemple) ; une classe sans `icon` n'a pas d'icône.
 
 import type { ReactNode } from "react";
@@ -71,7 +71,8 @@ export function ClassIcon({ classId, reference }: { classId: string; reference: 
     <span
       aria-hidden="true"
       data-testid="class-icon"
-      className={`inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-sunken ${ROLE_COLOR[c.role] ?? "text-ink-secondary"}`}
+      className={`inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-sunken ${c.color ? "" : (ROLE_COLOR[c.role] ?? "text-ink-secondary")}`}
+      style={c.color ? { color: c.color } : undefined}
     >
       {glyph ? (
         <svg
