@@ -1,0 +1,13 @@
+# cargo-deny (CI : `cargo deny check advisories`). Chaque exception dit pourquoi elle ne nous touche
+# pas et quand la retirer.
+
+[advisories]
+ignore = [
+    # SQLite < 3.54.0 (libsqlite3-sys < 0.39, embarqué par sqlx-sqlite) : lecture de mémoire non
+    # initialisée quand le processus ouvre une base ET son `-wal` fabriqués par un tiers. Ici, la
+    # seule base ouverte est celle du volume privé du conteneur, écrite par l'application seule ;
+    # aucune base ni aucun `-wal` ne vient d'un visiteur (pas d'envoi de fichier), et la restauration
+    # ne lit que les sauvegardes faites par l'application. Aucune version de sqlx (0.8.6, ni 0.9.0 :
+    # `libsqlite3-sys < 0.38`) n'accepte encore la 0.39. À retirer dès qu'une version de sqlx l'accepte.
+    { id = "RUSTSEC-2026-0459", reason = "base et -wal jamais fournis par un tiers ; pas de sqlx compatible avec libsqlite3-sys 0.39" },
+]
