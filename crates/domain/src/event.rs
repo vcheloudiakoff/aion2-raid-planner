@@ -823,6 +823,7 @@ mod tests {
             role: "ro".into(),
             default_min: 0,
             default_max: 10,
+            icon: None,
             label: label(id),
             enabled,
         }

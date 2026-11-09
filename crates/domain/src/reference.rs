@@ -99,6 +99,9 @@ pub struct Class {
     pub role: String,
     pub default_min: u32,
     pub default_max: u32,
+    /// Icône courte (un emoji) affichée devant le nom de classe ; facultative.
+    #[serde(default)]
+    pub icon: Option<String>,
     pub label: Label,
     #[serde(default = "enabled_by_default")]
     pub enabled: bool,
@@ -508,6 +511,7 @@ mod tests {
                 role: "ro1".into(),
                 default_min: 0,
                 default_max: 0,
+                icon: None,
                 label: label("Class"),
                 enabled: true,
             }],

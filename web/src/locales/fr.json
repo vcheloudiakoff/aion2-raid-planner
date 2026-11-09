@@ -382,5 +382,10 @@
   "editor.teamRoles.hint": "Un repère pour la composition, rien n'est refusé.",
   "editor.teamRoles.of": "{role}, {team}",
   "errors.candidature.team_invalid": "Choix d'Équipe invalide. Recharge la page.",
-  "errors.event.team_roles_invalid": "Plus de rôles demandés que l'Équipe n'a de places."
+  "errors.event.team_roles_invalid": "Plus de rôles demandés que l'Équipe n'a de places.",
+  "participant.accepted.player": "Joueur",
+  "participant.accepted.available": "Disponibles",
+  "participant.accepted.yes": "disponible",
+  "participant.accepted.preferred": "préféré",
+  "participant.accepted.no": "pas disponible"
 }

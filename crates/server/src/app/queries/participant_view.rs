@@ -150,6 +150,14 @@ fn roster(
                 class: c.class.clone(),
                 teams: c.teams.teams.clone(),
                 preferred_team: c.teams.preferred,
+                availabilities: c
+                    .availabilities
+                    .iter()
+                    .map(|a| Availability {
+                        slot_id: a.slot_id.clone(),
+                        preferred: a.preferred,
+                    })
+                    .collect(),
             }
         })
         .collect();

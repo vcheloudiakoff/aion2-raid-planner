@@ -45,6 +45,8 @@ export interface GameClass {
   role: string;
   defaultMin: number;
   defaultMax: number;
+  /** Icône courte (un emoji), facultative. */
+  icon?: string;
   label: Label;
   enabled: boolean;
 }
@@ -230,6 +232,8 @@ export interface RosterEntry extends Teammate {
   /** Équipes souhaitées, vide = peu importe. */
   teams: number[];
   preferredTeam?: number;
+  /** Créneaux cochés et préférences. */
+  availabilities: Availability[];
 }
 
 /** Lien par lequel une candidature est arrivée : `/j/` direct, `/e/` public. */

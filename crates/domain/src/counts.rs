@@ -160,6 +160,7 @@ mod tests {
             role: role.into(),
             default_min: 0,
             default_max: 10,
+            icon: None,
             label: label(id),
             enabled: true,
         }

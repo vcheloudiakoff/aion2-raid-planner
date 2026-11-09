@@ -528,15 +528,20 @@ fn has_key(v: &Value, key: &str) -> bool {
     }
 }
 
-/// `acceptedRoster` de `v`, chaque ligne vérifiée réduite à `pseudoSrv`, `class` et `teams` (vide
-/// ici), rendue sans `teams` pour comparer aux attendus.
+/// `acceptedRoster` de `v`, chaque ligne vérifiée réduite à `pseudoSrv`, `class`, `teams` et
+/// `availabilities`, rendue sans ces deux derniers pour comparer aux attendus.
 fn roster_of(v: &Value) -> Vec<Value> {
     let list = v["acceptedRoster"].as_array().unwrap();
     list.iter()
         .map(|item| {
-            assert_eq!(keys_of(item), ["class", "pseudoSrv", "teams"], "{item}");
+            assert_eq!(
+                keys_of(item),
+                ["availabilities", "class", "pseudoSrv", "teams"],
+                "{item}"
+            );
             let mut item = item.clone();
             item.as_object_mut().unwrap().remove("teams");
+            item.as_object_mut().unwrap().remove("availabilities");
             item
         })
         .collect()

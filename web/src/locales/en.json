@@ -382,5 +382,10 @@
   "editor.teamRoles.hint": "A guide for composition, nothing is refused.",
   "editor.teamRoles.of": "{role}, {team}",
   "errors.candidature.team_invalid": "Invalid party choice. Reload the page.",
-  "errors.event.team_roles_invalid": "More roles wanted than the party has seats."
+  "errors.event.team_roles_invalid": "More roles wanted than the party has seats.",
+  "participant.accepted.player": "Player",
+  "participant.accepted.available": "Available",
+  "participant.accepted.yes": "available",
+  "participant.accepted.preferred": "preferred",
+  "participant.accepted.no": "not available"
 }

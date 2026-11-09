@@ -86,6 +86,8 @@ pub struct Class {
     pub role: String,
     pub default_min: u32,
     pub default_max: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     pub label: Label,
     pub enabled: bool,
 }
@@ -188,6 +190,7 @@ impl From<&r::ReferenceSet> for ReferenceSet {
                     role: x.role.clone(),
                     default_min: x.default_min,
                     default_max: x.default_max,
+                    icon: x.icon.clone(),
                     label: (&x.label).into(),
                     enabled: x.enabled,
                 })
@@ -512,6 +515,8 @@ pub struct RosterEntry {
     pub teams: Vec<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preferred_team: Option<u32>,
+    /// Créneaux cochés et préférences : le planning des acceptés (2026-11-09).
+    pub availabilities: Vec<Availability>,
 }
 
 /// Corps de `POST /api/participant/teams` : Équipes souhaitées, vide = peu importe.

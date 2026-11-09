@@ -7,6 +7,7 @@
 import { labelOf } from "../api/reference";
 import type { CandidatureStatus, OrganizerCandidature, ReferenceSet } from "../api/types";
 import { t, useLang, type MessageKey } from "../i18n";
+import { ClassIcon } from "./AcceptedList";
 import { FactionDot } from "./EventSummary";
 
 const STATUS_KEY: Record<CandidatureStatus, MessageKey> = {
@@ -78,6 +79,7 @@ export function CandidatureRow({ candidature: c, reference, fresh, onOpen }: Pro
         onClick={(e) => onOpen(c.id, e.currentTarget)}
         className={`flex min-h-tap w-full items-center gap-3 border-b border-l-[3px] border-b-border py-2 pr-1 pl-2 text-left text-ink-primary motion-safe:transition-colors motion-safe:duration-700 ${fresh ? "border-l-accent" : "border-l-transparent"}`}
       >
+        <ClassIcon classId={c.class} reference={reference} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-label">{c.pseudo}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-meta text-ink-secondary">

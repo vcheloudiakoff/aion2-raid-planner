@@ -859,17 +859,18 @@ describe("placement", () => {
 
 describe("accepted list", () => {
   const roster = (n: number) =>
-    Array.from({ length: n }, (_, i) => ({ pseudoSrv: `Joueur${i}[SB]`, class: "c2", teams: [] }));
+    Array.from({ length: n }, (_, i) => ({ pseudoSrv: `Joueur${i}[SB]`, class: "c2", teams: [], availabilities: [] }));
   /** Trois acceptés dont le lecteur (Nyra), au milieu. */
   const acceptedRoster = [
-    { pseudoSrv: "Kael[SA]", class: "c2", teams: [] },
-    { pseudoSrv: "Nyra[SA]", class: "c1", teams: [] },
-    { pseudoSrv: "Lio[SB]", class: "c1", teams: [] },
+    { pseudoSrv: "Kael[SA]", class: "c2", teams: [], availabilities: [] },
+    { pseudoSrv: "Nyra[SA]", class: "c1", teams: [], availabilities: [] },
+    { pseudoSrv: "Lio[SB]", class: "c1", teams: [], availabilities: [] },
   ];
   const listed = (patch: Partial<ParticipantView> = {}, event: Partial<ParticipantView["event"]> = {}) =>
     viewWith({ status: "accepted", acceptedRoster, acceptedRosterSelf: 1, ...patch }, event);
   const section = () => q<HTMLDetailsElement>('[data-testid="accepted"]');
-  const rows = () => [...m.container.querySelectorAll('[data-testid="accepted"] li')].map((li) => li.textContent);
+  const rows = () =>
+    [...m.container.querySelectorAll('[data-testid="accepted"] li [data-testid="roster-who"]')].map((li) => li.textContent);
   const marked = () => [...m.container.querySelectorAll('[data-testid="accepted"] li')].map((li) => li.hasAttribute("data-me"));
 
   it("accepted in an open raid: « Acceptés (N) », Pseudo[SRV] in mono, the class label, « toi » at the server's rank", async () => {
@@ -883,8 +884,24 @@ describe("accepted list", () => {
     expect(marked()).toEqual([false, true, false]);
   });
 
+  it("is a planning: ✓ available, ★ preferred, – otherwise, and a count per slot", async () => {
+    const planned = [
+      { pseudoSrv: "Kael[SA]", class: "c2", teams: [1, 2], preferredTeam: 2, availabilities: [{ slotId: "slot_a", preferred: true }] },
+      { pseudoSrv: "Nyra[SA]", class: "c1", teams: [], availabilities: [{ slotId: "slot_a", preferred: false }, { slotId: "slot_b", preferred: false }] },
+    ];
+    serve(() => json(listed({ acceptedRoster: planned, acceptedRosterSelf: 1 })));
+    await render();
+    const cells = (slot: string) =>
+      [...m.container.querySelectorAll(`[data-testid="roster-cell-${slot}"]`)].map((c) => c.textContent);
+    expect(cells("slot_a")).toEqual(["★", "✓"]);
+    expect(cells("slot_b")).toEqual(["–", "✓"]);
+    expect(q('[data-testid="roster-count-slot_a"]')!.textContent).toBe("2");
+    expect(q('[data-testid="roster-count-slot_past"]')!.textContent).toBe("0");
+    expect(q('[data-testid="roster-teams"]')!.textContent).toBe("É1 É2★");
+  });
+
   it("two identical lines: only the one at acceptedRosterSelf is marked", async () => {
-    const twin = { pseudoSrv: "Nyra[SA]", class: "c1", teams: [] };
+    const twin = { pseudoSrv: "Nyra[SA]", class: "c1", teams: [], availabilities: [] };
     serve(() => json(listed({ acceptedRoster: [twin, twin], acceptedRosterSelf: 1 })));
     await render();
     expect(marked()).toEqual([false, true]);
