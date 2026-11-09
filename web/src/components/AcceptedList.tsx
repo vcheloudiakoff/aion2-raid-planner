@@ -42,7 +42,7 @@ interface RosterProps {
   reference: ReferenceSet | null;
 }
 
-function Roster({ entries, self, slots, reference }: RosterProps) {
+export function Roster({ entries, self, slots, reference }: RosterProps) {
   const lang = useLang();
   const [open, setOpen] = useState(() => entries.length < OPEN_BELOW);
   const classLabel = (id: string) => {

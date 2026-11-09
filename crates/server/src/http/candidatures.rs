@@ -16,7 +16,7 @@ use domain::candidature::Origin;
 
 use crate::app::AppState;
 use crate::app::commands::submit_candidature::{Submitted, submit_candidature};
-use crate::app::queries::public_event::public_event;
+use crate::app::queries::public_event::{join_event, public_event};
 use crate::http::dto::{CreatedCandidature, ParticipantLinks, SubmitCandidature};
 use crate::http::form_token::{FormEnvelope, FormJson};
 use crate::http::links::JoinLink;
@@ -32,7 +32,7 @@ pub async fn get_public_event(
 }
 
 pub async fn get_join_event(State(state): State<AppState>, link: JoinLink) -> Response {
-    match public_event(&state, link.event_id()).await {
+    match join_event(&state, link.event_id()).await {
         Ok(event) => Json(event).into_response(),
         Err(problem) => problem.into_response(),
     }

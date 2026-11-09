@@ -129,6 +129,28 @@ pub async fn load(
 /// Liste des acceptés vue par la candidature `me` : `None` si elle n'est pas `accepted`
 /// (`domain::candidature::accepted_list`), sinon chaque accepté réduit à `Pseudo[SRV]` et classe, et
 /// le rang de `me` dans la liste.
+/// Une ligne du planning des acceptés : `Pseudo[SRV]`, classe, Équipes et disponibilités, rien
+/// d'autre. Partagée avec la page du lien direct.
+pub(crate) fn roster_entry(
+    reference: &ReferenceSet,
+    c: &candidatures::CandidatureRow,
+) -> RosterEntry {
+    RosterEntry {
+        pseudo_srv: pseudo_srv(reference, &c.pseudo, &c.server),
+        class: c.class.clone(),
+        teams: c.teams.teams.clone(),
+        preferred_team: c.teams.preferred,
+        availabilities: c
+            .availabilities
+            .iter()
+            .map(|a| Availability {
+                slot_id: a.slot_id.clone(),
+                preferred: a.preferred,
+            })
+            .collect(),
+    }
+}
+
 fn roster(
     reference: &ReferenceSet,
     all: &[candidatures::CandidatureRow],
@@ -145,20 +167,7 @@ fn roster(
         .into_iter()
         .map(|id| {
             let c = by_id[id];
-            RosterEntry {
-                pseudo_srv: pseudo_srv(reference, &c.pseudo, &c.server),
-                class: c.class.clone(),
-                teams: c.teams.teams.clone(),
-                preferred_team: c.teams.preferred,
-                availabilities: c
-                    .availabilities
-                    .iter()
-                    .map(|a| Availability {
-                        slot_id: a.slot_id.clone(),
-                        preferred: a.preferred,
-                    })
-                    .collect(),
-            }
+            roster_entry(reference, c)
         })
         .collect();
     Some((entries, list.own))

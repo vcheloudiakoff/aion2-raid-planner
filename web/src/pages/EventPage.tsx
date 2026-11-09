@@ -11,7 +11,8 @@ import { getEvent, submitCandidature, type EventAccess } from "../api/candidatur
 import { ApiError } from "../api/client";
 import { getFormToken } from "../api/events";
 import { forgetEvent, forgetSecret, saveParticipantLink } from "../api/links";
-import type { CreatedCandidature, PublicEvent, ReferenceSet, SubmitCandidature } from "../api/types";
+import type { CreatedCandidature, JoinEvent, PublicEvent, ReferenceSet, SubmitCandidature } from "../api/types";
+import { Roster } from "../components/AcceptedList";
 import { CandidatureForm } from "../components/CandidatureForm";
 import { DeadLink, GONE, isDeadLinkCode } from "../components/DeadLink";
 import { Summary } from "../components/EventSummary";
@@ -48,7 +49,7 @@ export function EventPage({ reference, mode, deps = defaultDeps }: Props) {
   const navigate = useNavigate();
   const [prefs] = useState(readCandidatePrefs);
   const key = (mode === "public" ? params.id : params.secret) ?? "";
-  const [event, setEvent] = useState<PublicEvent | null>(null);
+  const [event, setEvent] = useState<PublicEvent | JoinEvent | null>(null);
   const [gone, setGone] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const token = useRef<Promise<string> | null>(null);
@@ -149,6 +150,9 @@ export function EventPage({ reference, mode, deps = defaultDeps }: Props) {
   return (
     <main className={main}>
       <Summary event={event} reference={reference} now={deps.now} />
+      {access.mode === "join" && "acceptedRoster" in event && event.acceptedRoster.length > 0 && (
+        <Roster entries={event.acceptedRoster} self={undefined} slots={event.slots} reference={reference} />
+      )}
       {event.status === "cancelled" ? (
         <p role="status" className="mt-6 rounded-md border border-danger px-3 py-2 text-label text-danger">
           {t("event.cancelled")}

@@ -5,8 +5,12 @@ use domain::counts::{ClassMin, public_counts};
 use domain::reference::ReferenceSet;
 
 use crate::app::AppState;
-use crate::http::dto::{MissingRole, PublicEvent, PublicSlot};
+use domain::candidature::CandidatureStatus;
+
+use crate::app::queries::participant_view::roster_entry;
+use crate::http::dto::{JoinEvent, MissingRole, PublicEvent, PublicSlot};
 use crate::http::errors::{Code, Problem};
+use crate::infra::candidatures;
 use crate::infra::events::{self, EventSnapshot};
 
 /// `event.not_found` si l'id est inconnu. Un événement `cancelled` reste lisible.
@@ -19,6 +23,34 @@ pub async fn public_event(state: &AppState, event_id: &str) -> Result<PublicEven
 }
 
 /// `PublicEvent` d'un instantané : comptes par classe et par rôle, rôles manquants.
+/// Page du lien direct `/j/` : l'événement public et le planning des candidatures `accepted`
+/// (décision de Vincent du 2026-11-09 : la légion voit qui est inscrit avant de candidater). Le lien
+/// direct n'est remis qu'aux joueurs invités par l'organisateur.
+pub async fn join_event(state: &AppState, event_id: &str) -> Result<JoinEvent, Problem> {
+    let Some(reference) = state.reference.get() else {
+        return Err(Code::ReferenceUnavailable.into());
+    };
+    let snapshot = read(state, event_id).await?;
+    let all = async {
+        let mut conn = state.db.read.acquire().await?;
+        candidatures::list(&mut conn, event_id).await
+    }
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, event = event_id, "join roster read failed");
+        Problem::from(Code::ServerInternal)
+    })?;
+    let accepted_roster = all
+        .iter()
+        .filter(|c| c.status == CandidatureStatus::Accepted)
+        .map(|c| roster_entry(&reference, c))
+        .collect();
+    Ok(JoinEvent {
+        event: build(&reference, snapshot),
+        accepted_roster,
+    })
+}
+
 pub fn build(reference: &ReferenceSet, snapshot: EventSnapshot) -> PublicEvent {
     let bounds: Vec<ClassMin> = snapshot
         .bounds

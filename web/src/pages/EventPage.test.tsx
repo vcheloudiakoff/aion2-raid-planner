@@ -425,6 +425,18 @@ describe("states", () => {
     expect(document.title).not.toContain(JOIN);
   });
 
+  it("direct mode shows the planning of the accepted, the public page never does", async () => {
+    const roster = [{ pseudoSrv: "Kael[SA]", class: "c2", teams: [1], availabilities: [{ slotId: "slot_a", preferred: true }] }];
+    serve(() => json({ ...publicEvent, acceptedRoster: roster }));
+    await render(`/j/${JOIN}`);
+    expect(q('[data-testid="accepted"]')).not.toBeNull();
+    expect(q('[data-testid="roster-cell-slot_a"]').textContent).toBe("★");
+    m.unmount();
+    serve(() => json({ ...publicEvent, acceptedRoster: roster }));
+    await render(`/e/${EVENT_ID}`);
+    expect(q('[data-testid="accepted"]')).toBeNull();
+  });
+
   it("hides the form of a cancelled raid, on /e and on /j", async () => {
     for (const path of [`/e/${EVENT_ID}`, `/j/${JOIN}`]) {
       serve(() => json({ ...publicEvent, status: "cancelled" }));

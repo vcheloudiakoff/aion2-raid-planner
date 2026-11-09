@@ -522,6 +522,15 @@ pub struct RosterEntry {
     pub availabilities: Vec<Availability>,
 }
 
+/// Réponse de `GET /api/join` : l'événement public, à plat, et le planning de ses acceptés.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinEvent {
+    #[serde(flatten)]
+    pub event: PublicEvent,
+    pub accepted_roster: Vec<RosterEntry>,
+}
+
 /// Corps de `POST /api/participant/teams` : Équipes souhaitées, vide = peu importe.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -245,15 +245,28 @@ async fn unknown_event_is_404_and_cancelled_stays_readable() {
 }
 
 #[tokio::test]
-async fn join_read_gives_the_same_public_event() {
+async fn join_read_gives_the_public_event_and_the_accepted_planning() {
     let (state, router) = setup("join").await;
     let c = create(&state, &router, json!({})).await;
     insert_candidature(&state, &c.event_id, 1, PSEUDOS[0], "cleric", "accepted").await;
     let (_, public, _) = get(&router, &format!("/api/events/{}", c.event_id), &[]).await;
     let (status, joined, body) = get(&router, "/api/join", &[("x-link-secret", &c.join)]).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // Le lien direct, remis par l'organisateur à sa légion, montre en plus le planning des acceptés
+    // (décision de Vincent du 2026-11-09) ; la page publique reste sans donnée nominative.
+    let mut joined = joined;
+    let roster = joined
+        .as_object_mut()
+        .unwrap()
+        .remove("acceptedRoster")
+        .unwrap();
     assert_eq!(joined, public);
-    assert_no_nominative_data(&body, "join");
+    assert_eq!(roster.as_array().unwrap().len(), 1);
+    assert_eq!(roster[0]["class"], "cleric");
+    assert_eq!(
+        roster[0].as_object().unwrap().keys().collect::<Vec<_>>(),
+        ["availabilities", "class", "pseudoSrv", "teams"]
+    );
 
     let (res, body) = send_with(
         &router,

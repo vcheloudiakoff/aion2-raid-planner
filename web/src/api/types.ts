@@ -145,6 +145,12 @@ export interface PublicEvent {
   missingRoles: { role: string; missing: number }[];
 }
 
+/** `GET /api/join` : l'événement public, à plat, et le planning de ses acceptés (lien direct
+ * seulement). */
+export interface JoinEvent extends PublicEvent {
+  acceptedRoster: RosterEntry[];
+}
+
 export type CandidatureStatus = "pending" | "accepted" | "rejected" | "withdrawn";
 
 /** Corps de `POST /api/events/{eventId}/candidatures` et de `POST /api/join/candidatures`, à côté de

@@ -3,7 +3,7 @@
 
 import { getJson } from "./client";
 import { defaultDeps, postForm, type FormDeps } from "./events";
-import type { CreatedCandidature, PublicEvent, SubmitCandidature } from "./types";
+import type { CreatedCandidature, JoinEvent, PublicEvent, SubmitCandidature } from "./types";
 
 export const JOIN_URL = "/api/join";
 
@@ -18,11 +18,11 @@ export function getPublicEvent(eventId: string): Promise<PublicEvent> {
   return getJson<PublicEvent>(publicEventUrl(eventId));
 }
 
-export function getJoinEvent(secret: string): Promise<PublicEvent> {
-  return getJson<PublicEvent>(JOIN_URL, { linkSecret: secret });
+export function getJoinEvent(secret: string): Promise<JoinEvent> {
+  return getJson<JoinEvent>(JOIN_URL, { linkSecret: secret });
 }
 
-export function getEvent(access: EventAccess): Promise<PublicEvent> {
+export function getEvent(access: EventAccess): Promise<PublicEvent | JoinEvent> {
   return access.mode === "public" ? getPublicEvent(access.eventId) : getJoinEvent(access.secret);
 }
 
