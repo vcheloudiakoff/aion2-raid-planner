@@ -17,7 +17,7 @@ sqlx = { version = "=0.8.6", default-features = false }
 rust-embed = { version = "=8.13.0", features = ["mime-guess", "include-exclude", "debug-embed"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
-toml = { version = "=1.2.0", default-features = false, features = ["std", "serde", "parse"] }
+toml = { version = "=1.2.1", default-features = false, features = ["std", "serde", "parse"] }
 sha2 = "=0.11.1"
 hmac = "=0.13.0"
 # Sans la feature `jitter` (AD-7) : l'attente annoncée vient de `http::limits`, sans aléa.
