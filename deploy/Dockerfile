@@ -9,7 +9,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-FROM rust:1.99.1-alpine AS build
+FROM rust:1.100.0-alpine AS build
 RUN apk add --no-cache musl-dev
 WORKDIR /src
 # rust-toolchain.toml n'est pas copié : l'image fournit déjà 1.99.1, sans télécharger clippy ni rustfmt.
